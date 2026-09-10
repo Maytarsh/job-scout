@@ -74,11 +74,21 @@ def build_page():
     # the same two characters inside a string, so nothing that executes changes.
     body = "\n;\n".join(src).replace("</script", r"<\/script")
 
+    # Load errors are caught with window.onerror rather than by wrapping the
+    # sources in a try block. A function declaration inside a block gets a
+    # block-scoped binding, so a test that swaps a global out - which is how
+    # anything touching a Sheet or the network is isolated here - would not
+    # change what the code inside that block calls. Every such test then ran
+    # against the real function and failed reaching for a Sheet that does not
+    # exist. At the top level of a script, the swap works.
     page = (
         "<!doctype html><meta charset=utf-8><title>logic tests</title>\n"
-        "<script>\nwindow.loadError = null;\ntry {\n"
-        + body
-        + "\n} catch (e) { window.loadError = String(e && e.stack || e); }\n</script>"
+        "<script>window.loadError = null;\n"
+        "window.onerror = function (message, url, line, column, error) {\n"
+        "  window.loadError = message + ' (line ' + line + ')' +\n"
+        "                     (error && error.stack ? '\\n' + error.stack : '');\n"
+        "};</script>\n"
+        "<script>\n" + body + "\n</script>"
     )
     # Inside the repo, not /tmp: the snap-confined browser can read $HOME.
     path = os.path.join(ROOT, 'test', '.harness.html')

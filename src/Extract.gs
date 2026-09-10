@@ -150,15 +150,21 @@ function estimateTokens_(text) {
  * the equal-opportunity statement, which are identical across every posting a
  * company writes and tell the scorer nothing.
  */
+var TRUNCATION_MARKER = '\n[truncated]';
+
 function capTokens_(text, maxTokens) {
   var limit = (maxTokens || CONFIG.MAX_DESC_TOKENS) * CONFIG.CHARS_PER_TOKEN;
   var out = String(text || '');
   if (out.length <= limit) return out;
 
-  out = out.substring(0, limit);
+  // The marker counts against the limit. Appending it afterwards made the cap
+  // three tokens larger than the number it was given, which is harmless at
+  // 1,200 and not harmless as the reason a hard limit is not hard.
+  var room = limit - TRUNCATION_MARKER.length;
+  out = out.substring(0, room);
   var lastSpace = out.lastIndexOf(' ');
-  if (lastSpace > limit - 200) out = out.substring(0, lastSpace);
-  return out + '\n[truncated]';
+  if (lastSpace > room - 200) out = out.substring(0, lastSpace);
+  return out + TRUNCATION_MARKER;
 }
 
 // ------------------------------------------------------------------- json-ld

@@ -307,3 +307,693 @@ t('a login or captcha wall is named, not routed around', function () {
   ok(blockedReason_('You will need multi-factor authentication'), 'mfa');
   eq(blockedReason_('Apply below with your resume'), '', 'an ordinary posting');
 });
+
+// ------------------------------------------------------------------ isolation
+
+/**
+ * Everything in the sources is a top-level var or function declaration, so it
+ * is reassignable, and swapping one out is how the pipeline gets tested without
+ * a Sheet, a network or an API key. Always restored in a finally: a leaked stub
+ * turns into a failure three tests later with nothing to connect it to.
+ */
+function withGlobals(overrides, fn) {
+  var keys = Object.keys(overrides);
+  var saved = {};
+  keys.forEach(function (k) { saved[k] = window[k]; window[k] = overrides[k]; });
+  try { return fn(); } finally { keys.forEach(function (k) { window[k] = saved[k]; }); }
+}
+
+function withProps(store, fn) {
+  return withGlobals({
+    PropertiesService: {
+      getScriptProperties: function () {
+        return {
+          getProperty: function (k) {
+            return store[k] === undefined ? null : store[k];
+          },
+          setProperty: function (k, v) { store[k] = String(v); },
+          deleteProperty: function (k) { delete store[k]; }
+        };
+      }
+    }
+  }, fn);
+}
+
+/** A book with the given Jobs rows, and nowhere for a write to escape to. */
+function fakeBook(rows) {
+  var book = {
+    jobSheet: null, rows: rows || [], appended: [], dirty: {}, byKey: {},
+    runs: [], errors: [], deadline: Date.now() + 60000
+  };
+  for (var i = 0; i < book.rows.length; i++) {
+    book.byKey[String(book.rows[i][J_KEY])] = { list: 'rows', i: i };
+  }
+  return book;
+}
+
+/** A Jobs row for a job that has been found and not yet scored. */
+function foundRow(company, title, location) {
+  var row = new Array(JOBS_HEADERS.length).fill('');
+  row[J_KEY] = dedupeKey_(company, title, location);
+  row[J_COMPANY] = company;
+  row[J_POSITION] = title;
+  row[J_LOCATION] = location;
+  row[J_STATUS] = 'FOUND';
+  row[J_AGE] = UNKNOWN_AGE;
+  row[J_NOTES] = 'Underwrite acquisitions and build models.';
+  return row;
+}
+
+/** A succeeded batch result envelope carrying the given dimension scores. */
+function batchResult(customId, dims, extras) {
+  var body = {
+    industry_fit: dims[0], experience: dims[1], compensation: dims[2],
+    location: dims[3], interview_odds: dims[4],
+    why: 'Directly relevant.', salary_text: '', concerns: ''
+  };
+  Object.keys(extras || {}).forEach(function (k) { body[k] = extras[k]; });
+  return {
+    custom_id: customId,
+    result: {
+      type: 'succeeded',
+      message: {
+        model: 'claude-haiku-4-5',
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: JSON.stringify(body) }],
+        usage: { input_tokens: 2000, output_tokens: 200 }
+      }
+    }
+  };
+}
+
+// --------------------------------------------------------- profile validation
+
+function validProfileRaw() {
+  return {
+    resume_text: 'Analyst with three years in acquisitions.',
+    resume_file_id: '',
+    locations: 'Austin TX, Remote',
+    target_roles: 'Acquisitions, Asset management',
+    weight_industry_fit: 30, weight_experience: 25, weight_compensation: 15,
+    weight_location: 10, weight_interview_odds: 20,
+    report_threshold: 75, apply_threshold: 85, max_posting_age_hours: 72,
+    email_report: 'yes', notes: 'prefer remote-first'
+  };
+}
+
+t('a complete profile reads back typed', function () {
+  var profile = validateProfile_(validProfileRaw());
+  eq(profile.locations, ['Austin TX', 'Remote'], 'locations split');
+  eq(profile.target_roles.length, 2, 'roles split');
+  eq(profile.report_threshold, 75, 'threshold is a number');
+  eq(profile.email_report, true, 'digest on');
+  eq(profile.notes, 'prefer remote-first', 'notes kept verbatim');
+});
+
+t('weights that do not add up to 100 fail the run', function () {
+  var raw = validProfileRaw();
+  raw.weight_industry_fit = 29;
+  throws(function () { validateProfile_(raw); }, 'add up to 99', 'sums to 99');
+});
+
+t('a report threshold above the apply threshold fails the run', function () {
+  var raw = validProfileRaw();
+  raw.report_threshold = 90;
+  throws(function () { validateProfile_(raw); }, 'higher than', 'inverted');
+});
+
+t('a missing required row fails the run and names the row', function () {
+  var raw = validProfileRaw();
+  raw.locations = '';
+  throws(function () { validateProfile_(raw); }, 'locations', 'missing locations');
+
+  var blank = validProfileRaw();
+  blank.weight_location = '   ';
+  throws(function () { validateProfile_(blank); }, 'weight_location', 'whitespace');
+});
+
+t('a threshold that is not a number fails rather than reading as zero', function () {
+  var raw = validProfileRaw();
+  raw.apply_threshold = 'eighty five';
+  throws(function () { validateProfile_(raw); }, 'not a number', 'words');
+});
+
+t('exactly one resume path is required', function () {
+  var both = validProfileRaw();
+  both.resume_file_id = '1AbC';
+  throws(function () { validateProfile_(both); }, 'both resume_text', 'both set');
+
+  var neither = validProfileRaw();
+  neither.resume_text = '';
+  throws(function () { validateProfile_(neither); }, 'no resume', 'neither set');
+
+  var fileOnly = validProfileRaw();
+  fileOnly.resume_text = '';
+  fileOnly.resume_file_id = '1AbC';
+  eq(validateProfile_(fileOnly).resume_file_id, '1AbC', 'file id alone is fine');
+});
+
+t('nothing invalid falls back to a default', function () {
+  // The failure this guards against is the quiet one: a profile that is wrong
+  // in a way the run works around produces months of scores that mean
+  // something nobody chose, and the report looks entirely normal throughout.
+  var raw = validProfileRaw();
+  raw.weight_experience = 99;
+  var scored = false;
+  try { validateProfile_(raw); scored = true; } catch (e) { /* expected */ }
+  ok(!scored, 'a profile summing to 174 was accepted');
+});
+
+t('the digest is on unless it is explicitly turned off', function () {
+  var unset = validProfileRaw();
+  delete unset.email_report;
+  eq(validateProfile_(unset).email_report, true, 'unset means on');
+
+  var off = validProfileRaw();
+  off.email_report = 'no';
+  eq(validateProfile_(off).email_report, false, 'explicitly off');
+});
+
+// ---------------------------------------------------------- answer resolution
+
+var FACTS = {
+  name: 'A Candidate',
+  current_title: 'Acquisitions Analyst',
+  education: 'BA Economics',
+  years_total: '3',
+  summary: 'Holds an H-1B, eligible from next spring'
+};
+
+function specFor(key) {
+  for (var i = 0; i < ANSWER_KEYS.length; i++) {
+    if (ANSWER_KEYS[i].key === key) return ANSWER_KEYS[i];
+  }
+  throw new Error('no ANSWER_KEYS entry for ' + key);
+}
+
+t('a resume fact never answers a question only the person can answer', function () {
+  // The whole failsafe in one assertion. The facts above say the candidate
+  // holds an H-1B and is eligible from a date - which reads like an answer to
+  // "do you need sponsorship" and is not one. An agent that treats it as one
+  // has put a false statement on a real application under someone's name.
+  var sponsorship = resolveAnswer_(specFor('needs_sponsorship'), FACTS, {});
+  eq(sponsorship.answer, UNESTABLISHED, 'sponsorship');
+  eq(sponsorship.source, UNESTABLISHED, 'sponsorship source');
+
+  var authorized = resolveAnswer_(specFor('work_authorized'), FACTS, {});
+  eq(authorized.answer, UNESTABLISHED, 'work authorisation');
+
+  var salary = resolveAnswer_(specFor('salary_expectation'), FACTS, {});
+  eq(salary.answer, UNESTABLISHED, 'salary');
+
+  var years = resolveAnswer_(specFor('years_experience'), FACTS,
+                             { years_experience: '' });
+  eq(years.answer, UNESTABLISHED, 'years in a named field, despite years_total');
+});
+
+t('every humanOnly key really is unanswerable from any resume fact', function () {
+  // Guards the table itself: adding a humanOnly key and quietly giving it a
+  // factKey would reopen the hole this design exists to close.
+  var everything = {};
+  for (var f = 0; f < ANSWER_KEYS.length; f++) {
+    everything[ANSWER_KEYS[f].key] = 'a fact';
+    if (ANSWER_KEYS[f].factKey) everything[ANSWER_KEYS[f].factKey] = 'a fact';
+  }
+  for (var i = 0; i < ANSWER_KEYS.length; i++) {
+    if (!ANSWER_KEYS[i].humanOnly) continue;
+    ok(!ANSWER_KEYS[i].factKey, ANSWER_KEYS[i].key + ' has a factKey');
+    var resolved = resolveAnswer_(ANSWER_KEYS[i], everything, {});
+    eq(resolved.answer, UNESTABLISHED, ANSWER_KEYS[i].key + ' from facts');
+  }
+});
+
+t('the Answers tab is the one place a humanOnly answer comes from', function () {
+  var resolved = resolveAnswer_(specFor('needs_sponsorship'), FACTS,
+                                { needs_sponsorship: 'Yes, from Nov 2026' });
+  eq(resolved.answer, 'Yes, from Nov 2026', 'answer');
+  eq(resolved.source, 'answers', 'source');
+});
+
+t('a question the resume does establish is answered from it', function () {
+  var resolved = resolveAnswer_(specFor('education'), FACTS, {});
+  eq(resolved.answer, 'BA Economics', 'education');
+  eq(resolved.source, 'resume', 'source');
+});
+
+t('a question this posting invented is treated as the person\'s to answer', function () {
+  var resolved = resolveAnswers_(
+    [{ key: 'portfolio_url', question: 'Link to a deal sheet?' }], FACTS, {});
+  var extra = resolved[resolved.length - 1];
+  eq(extra.key, 'portfolio_url', 'key');
+  eq(extra.answer, UNESTABLISHED, 'answer');
+  ok(unestablished_(resolved).indexOf('portfolio_url') !== -1, 'not listed as missing');
+});
+
+t('an answered profile leaves nothing unestablished', function () {
+  var answers = {};
+  for (var i = 0; i < ANSWER_KEYS.length; i++) {
+    if (ANSWER_KEYS[i].humanOnly) answers[ANSWER_KEYS[i].key] = 'answered';
+  }
+  var resolved = resolveAnswers_([], FACTS, answers);
+  eq(unestablished_(resolved), [], 'still missing something');
+});
+
+// -------------------------------------------------------------- batch results
+
+t('results are applied by custom_id, whatever order they arrive in', function () {
+  var rows = [foundRow('Marlow Ridge', 'Acquisitions Analyst', 'Austin, TX'),
+              foundRow('Marlow Ridge', 'Development Manager', 'Austin, TX'),
+              foundRow('Ledge Investments', 'Asset Manager', 'Remote')];
+  var book = fakeBook(rows);
+  var profile = validateProfile_(validProfileRaw());
+
+  // Deliberately not in row order, and keyed only by custom_id.
+  var results = {};
+  results[jobCustomId_(rows[2][J_KEY])] = batchResult('c', [10, 10, 10, 10, 10]);
+  results[jobCustomId_(rows[0][J_KEY])] = batchResult('a', [100, 100, 100, 100, 100]);
+  results[jobCustomId_(rows[1][J_KEY])] = batchResult('b', [50, 50, 50, 50, 50]);
+
+  var outcome = withProps({}, function () {
+    return applyScores_(book, profile, results);
+  });
+
+  eq(outcome.scored, 3, 'scored');
+  eq(rows[0][J_SCORE], 100, 'first row got its own score');
+  eq(rows[1][J_SCORE], 50, 'second row got its own score');
+  eq(rows[2][J_SCORE], 10, 'third row got its own score');
+});
+
+t('all five dimensions are kept as their own columns', function () {
+  var rows = [foundRow('Marlow Ridge', 'Acquisitions Analyst', 'Austin, TX')];
+  var book = fakeBook(rows);
+  var results = {};
+  results[jobCustomId_(rows[0][J_KEY])] =
+    batchResult('a', [88, 72, 60, 95, 55], { salary_text: 'USD 95k-115k' });
+
+  withProps({}, function () {
+    applyScores_(book, validateProfile_(validProfileRaw()), results);
+  });
+
+  eq(rows[0][J_INDUSTRY], 88, 'industry fit');
+  eq(rows[0][J_EXPERIENCE], 72, 'experience');
+  eq(rows[0][J_COMPENSATION], 60, 'compensation');
+  eq(rows[0][J_LOCATION_FIT], 95, 'location fit');
+  eq(rows[0][J_INTERVIEW], 55, 'interview odds');
+  eq(rows[0][J_SCORE], 74, 'the weighted total');
+  eq(rows[0][J_SALARY], 'USD 95k-115k', 'salary as the posting stated it');
+});
+
+t('a result that never arrived leaves its row queued, not mis-scored', function () {
+  var rows = [foundRow('Marlow Ridge', 'Acquisitions Analyst', 'Austin, TX'),
+              foundRow('Marlow Ridge', 'Development Manager', 'Austin, TX')];
+  var book = fakeBook(rows);
+  var results = {};
+  results[jobCustomId_(rows[1][J_KEY])] = batchResult('b', [80, 80, 80, 80, 80]);
+
+  var outcome = withProps({}, function () {
+    return applyScores_(book, validateProfile_(validProfileRaw()), results);
+  });
+
+  eq(outcome.scored, 1, 'scored');
+  eq(rows[0][J_SCORE], '', 'the missing one kept an empty score');
+  eq(rows[1][J_SCORE], 80, 'the present one was scored');
+  eq(unscoredJobs_(book, 10).length, 1, 'the missing one is back in the queue');
+});
+
+t('a result for a job that is not in the Sheet is ignored', function () {
+  var rows = [foundRow('Marlow Ridge', 'Acquisitions Analyst', 'Austin, TX')];
+  var book = fakeBook(rows);
+  var results = { deadbeefdeadbeefdeadbeefdeadbeef: batchResult('x', [9, 9, 9, 9, 9]) };
+  results[jobCustomId_(rows[0][J_KEY])] = batchResult('a', [80, 80, 80, 80, 80]);
+
+  var outcome = withProps({}, function () {
+    return applyScores_(book, validateProfile_(validProfileRaw()), results);
+  });
+  eq(outcome.scored, 1, 'only the known job was scored');
+  eq(rows[0][J_SCORE], 80, 'and it got the right score');
+});
+
+t('an already-scored row is never re-scored', function () {
+  var rows = [foundRow('Marlow Ridge', 'Acquisitions Analyst', 'Austin, TX')];
+  rows[0][J_SCORE] = 91;
+  var book = fakeBook(rows);
+  var results = {};
+  results[jobCustomId_(rows[0][J_KEY])] = batchResult('a', [10, 10, 10, 10, 10]);
+
+  var outcome = withProps({}, function () {
+    return applyScores_(book, validateProfile_(validProfileRaw()), results);
+  });
+  eq(outcome.scored, 0, 'scored');
+  eq(rows[0][J_SCORE], 91, 'the existing score was overwritten');
+});
+
+t('a response that violates the schema stops being retried forever', function () {
+  var rows = [foundRow('Marlow Ridge', 'Acquisitions Analyst', 'Austin, TX')];
+  var book = fakeBook(rows);
+  var broken = batchResult('a', [80, 80, 80, 80, 80]);
+  broken.result.message.content = [{ type: 'text', text: 'not json at all' }];
+  var results = {};
+  results[jobCustomId_(rows[0][J_KEY])] = broken;
+
+  var outcome = withProps({}, function () {
+    return applyScores_(book, validateProfile_(validProfileRaw()), results);
+  });
+
+  eq(outcome.failed, 1, 'failed');
+  eq(rows[0][J_STATUS], 'BLOCKED', 'status');
+  eq(unscoredJobs_(book, 10).length, 0, 'it would be retried forever');
+  ok(book.errors.length === 1, 'no error row for the human');
+});
+
+t('a transient API error leaves the row for the next run', function () {
+  var rows = [foundRow('Marlow Ridge', 'Acquisitions Analyst', 'Austin, TX')];
+  var book = fakeBook(rows);
+  var results = {};
+  results[jobCustomId_(rows[0][J_KEY])] = {
+    custom_id: 'a',
+    result: { type: 'errored', error: { type: 'api_error', message: 'overloaded' } }
+  };
+
+  var outcome = withProps({}, function () {
+    return applyScores_(book, validateProfile_(validProfileRaw()), results);
+  });
+
+  eq(outcome.failed, 1, 'failed');
+  eq(rows[0][J_SCORE], '', 'the score was filled in anyway');
+  eq(unscoredJobs_(book, 10).length, 1, 'it is not queued for a retry');
+});
+
+t('a batch results body parses by custom_id and survives a broken line', function () {
+  var body = [
+    JSON.stringify({ custom_id: 'aaa', result: { type: 'succeeded' } }),
+    'this line is not json',
+    '',
+    JSON.stringify({ custom_id: 'bbb', result: { type: 'succeeded' } })
+  ].join('\n');
+
+  var parsed = parseBatchResults_(body);
+  eq(Object.keys(parsed).sort(), ['aaa', 'bbb'], 'one bad line cost the others');
+});
+
+// ----------------------------------------------------------- the submission cap
+
+t('a backlog is submitted in chunks, oldest first', function () {
+  var rows = [];
+  for (var i = 0; i < 120; i++) {
+    rows.push(foundRow('Company ' + i, 'Analyst', 'Austin, TX'));
+  }
+  var book = fakeBook(rows);
+  var profile = validateProfile_(validProfileRaw());
+  var store = {};
+  var submitted = [];
+
+  withGlobals({
+    readKeyValues_: function () { return FACTS; },
+    submitBatch_: function (requests) { submitted.push(requests); return 'batch_1'; }
+  }, function () {
+    withProps(store, function () {
+      eq(submitPending_(book, profile), CONFIG.MAX_NEW_JOBS_PER_RUN, 'first chunk');
+    });
+  });
+
+  eq(submitted[0].length, 50, 'first batch size');
+  eq(submitted[0][0].custom_id, jobCustomId_(rows[0][J_KEY]), 'oldest first');
+  eq(store.BATCH_ID, 'batch_1', 'the batch id was recorded');
+  ok(store.BATCH_SUBMITTED_AT, 'the submit time was recorded');
+});
+
+t('nothing is submitted while a batch is already pending', function () {
+  var book = fakeBook([foundRow('Marlow Ridge', 'Analyst', 'Austin, TX')]);
+  var sent = false;
+
+  withGlobals({
+    readKeyValues_: function () { return FACTS; },
+    submitBatch_: function () { sent = true; return 'batch_2'; }
+  }, function () {
+    withProps({ BATCH_ID: 'batch_1' }, function () {
+      eq(submitPending_(book, validateProfile_(validProfileRaw())), 0, 'submitted');
+    });
+  });
+  ok(!sent, 'a second batch was submitted over the pending one');
+});
+
+t('an empty queue submits nothing at all', function () {
+  var row = foundRow('Marlow Ridge', 'Analyst', 'Austin, TX');
+  row[J_SCORE] = 80;
+  var sent = false;
+
+  withGlobals({
+    readKeyValues_: function () { return FACTS; },
+    submitBatch_: function () { sent = true; return 'batch_1'; }
+  }, function () {
+    withProps({}, function () {
+      eq(submitPending_(fakeBook([row]), validateProfile_(validProfileRaw())), 0,
+         'submitted');
+    });
+  });
+  ok(!sent, 'an empty batch was sent');
+});
+
+t('every submitted request carries the job schema and its own custom_id', function () {
+  var rows = [foundRow('Marlow Ridge', 'Analyst', 'Austin, TX'),
+              foundRow('Ledge Investments', 'Asset Manager', 'Remote')];
+  var captured = null;
+
+  withGlobals({
+    readKeyValues_: function () { return FACTS; },
+    submitBatch_: function (requests) { captured = requests; return 'batch_1'; }
+  }, function () {
+    withProps({}, function () {
+      submitPending_(fakeBook(rows), validateProfile_(validProfileRaw()));
+    });
+  });
+
+  eq(captured.length, 2, 'request count');
+  ok(captured[0].custom_id !== captured[1].custom_id, 'two jobs shared one id');
+  eq(captured[0].params.model, CONFIG.SCORE_MODEL, 'model');
+  eq(captured[0].params.output_config.format.type, 'json_schema', 'structured output');
+  eq(captured[0].params.output_config.format.schema.additionalProperties, false,
+     'the schema lets anything through');
+});
+
+// --------------------------------------------------------------- the heartbeat
+
+/** runDiscovery with everything below it stubbed out. Returns what it did. */
+function discoveryRun(options) {
+  var seen = { digests: [], submitted: 0 };
+  var profile = validateProfile_(validProfileRaw());
+
+  withGlobals({
+    readProfile_: function () { return profile; },
+    openBook_: function () { return fakeBook(options.rows || []); },
+    resumeFacts_: function () { return FACTS; },
+    fetchAllSources_: function () {
+      return { jobs: options.jobs || [], ok: options.ok || 0, failed: 0 };
+    },
+    submitPending_: function () { return options.submits || 0; },
+    flushBook_: function () {},
+    rebuildReport_: function () { return options.matches || []; },
+    sendDigest_: function (p, matches) { seen.digests.push(matches.length); return true; }
+  }, function () {
+    seen.result = runDiscovery();
+  });
+  return seen;
+}
+
+t('a discovery run with nothing to submit still sends the heartbeat', function () {
+  // The case the digest exists for, and the one that is easiest to leave out:
+  // no jobs means no batch, no batch means collectScores has nothing to pick
+  // up, and the mail that would have said so is the mail that never arrives.
+  // A quiet morning and a trigger that stopped firing look identical from an
+  // inbox unless this fires.
+  var seen = discoveryRun({ jobs: [], submits: 0, ok: 3 });
+  eq(seen.digests, [0], 'digests sent');
+});
+
+t('a run that found jobs but submitted none still sends it', function () {
+  // Everything already scored, or a batch still pending. Either way nothing is
+  // coming from collectScores today.
+  var scored = foundRow('Marlow Ridge', 'Analyst', 'Austin, TX');
+  scored[J_SCORE] = 88;
+  var seen = discoveryRun({ rows: [scored], jobs: [], submits: 0, ok: 3,
+                            matches: [[88]] });
+  eq(seen.digests, [1], 'digests sent');
+});
+
+t('a run that did submit leaves the digest to the scoring step', function () {
+  var seen = discoveryRun({ jobs: [], submits: 12, ok: 3 });
+  eq(seen.digests, [], 'discovery sent a digest as well as collectScores');
+  eq(seen.result.submitted, 12, 'submitted');
+});
+
+// ----------------------------------------------------------- source isolation
+
+t('one dead source does not cost the others their jobs', function () {
+  var sources = [
+    { type: 'ats_greenhouse', ref: 'alive', label: 'Alive' },
+    { type: 'ats_greenhouse', ref: 'dead', label: 'Dead' },
+    { type: 'ats_lever', ref: 'alsoalive', label: 'Also alive' }
+  ];
+  var book = fakeBook([]);
+
+  var found = withGlobals({
+    readSources_: function () { return sources; },
+    fetchSource_: function (source) {
+      if (source.ref === 'dead') throw new Error('HTTP 404 from the board');
+      return [normalizedJob_({ company: source.label, title: 'Analyst',
+                               location: 'Austin, TX', description: 'Work.' })];
+    }
+  }, function () { return fetchAllSources_(book); });
+
+  eq(found.ok, 2, 'sources that answered');
+  eq(found.failed, 1, 'sources that failed');
+  eq(found.jobs.length, 2, 'jobs from the living sources');
+  eq(book.errors.length, 1, 'error rows');
+  ok(String(book.errors[0][3]).indexOf('careers page') !== -1,
+     'the error row does not say what to do: ' + book.errors[0][3]);
+});
+
+t('an unknown source type is reported rather than skipped in silence', function () {
+  throws(function () {
+    fetchSource_({ type: 'ats_workday', ref: 'x', label: 'x' });
+  }, 'unknown source type', 'unknown type');
+});
+
+t('every adapter returns the same shape, keyed and capped', function () {
+  var job = normalizedJob_({
+    company: 'Marlow Ridge Partners, Inc.', title: 'Analyst  ',
+    location: 'Los Angeles, CA', description: new Array(20000).join('word '),
+    url: 'https://example.invalid/j/1', posted: '2026-09-09T00:00:00Z'
+  });
+  eq(job.key, dedupeKey_('Marlow Ridge Partners, Inc.', 'Analyst', 'Los Angeles, CA'),
+     'key');
+  eq(job.title, 'Analyst', 'trimmed');
+  ok(estimateTokens_(job.description) <= CONFIG.MAX_DESC_TOKENS,
+     'description was not capped: ' + estimateTokens_(job.description));
+});
+
+// ------------------------------------------------------------- dedupe on write
+
+t('a job already in the Sheet is not added again, on any later day', function () {
+  var existing = foundRow('Marlow Ridge Partners', 'Acquisitions Analyst',
+                          'Los Angeles, CA');
+  existing[J_SCORE] = 88;
+  existing[J_STATUS] = 'APPLIED';
+  var book = fakeBook([existing]);
+
+  // Tomorrow, spelled differently by a different board.
+  var again = normalizedJob_({
+    company: 'MARLOW RIDGE PARTNERS LLC', title: 'Acquisitions Analyst (Req 4471)',
+    location: 'Los Angeles, California', description: 'Same job.'
+  });
+
+  eq(upsertJob_(book, again), false, 'it was added a second time');
+  eq(book.appended.length, 0, 'appended rows');
+  eq(existing[J_SCORE], 88, 'the existing score was disturbed');
+  eq(existing[J_STATUS], 'APPLIED', 'a human decision was overwritten');
+});
+
+t('two sources carrying one job in the same run collapse to one row', function () {
+  var book = fakeBook([]);
+  var fromAts = normalizedJob_({ company: 'Marlow Ridge', title: 'Analyst',
+                                 location: 'Austin, TX', description: 'A.' });
+  var fromPage = normalizedJob_({ company: 'Marlow Ridge Inc.', title: 'Analyst',
+                                  location: 'Austin, Texas', description: 'B.' });
+  eq(upsertJob_(book, fromAts), true, 'first');
+  eq(upsertJob_(book, fromPage), false, 'second');
+  eq(book.appended.length, 1, 'rows appended');
+});
+
+t('an unknown posting age is written as UNKNOWN, not as a blank or a zero', function () {
+  var book = fakeBook([]);
+  upsertJob_(book, normalizedJob_({ company: 'Marlow Ridge', title: 'Analyst',
+                                    location: 'Austin, TX', description: 'A.' }));
+  eq(book.appended[0][J_AGE], UNKNOWN_AGE, 'age');
+  eq(book.appended[0][J_POSTED], UNKNOWN_AGE, 'posted');
+});
+
+// -------------------------------------------------------------------- report
+
+t('the report shows matches only, best first, and says UNKNOWN where it is', function () {
+  var rows = [foundRow('A Co', 'Analyst', 'Austin, TX'),
+              foundRow('B Co', 'Manager', 'Remote'),
+              foundRow('C Co', 'Associate', 'Austin, TX')];
+  rows[0][J_SCORE] = 74;
+  rows[1][J_SCORE] = 91;
+  rows[2][J_SCORE] = 80;
+  rows[2][J_AGE] = 30;
+
+  var report = reportRows_(fakeBook(rows), { report_threshold: 75 });
+  eq(report.length, 2, 'rows shown');
+  eq(report[0][1], 'B Co', 'highest score first');
+  eq(report[1][1], 'C Co', 'second');
+  eq(report[0][6], UNKNOWN_AGE, 'an unknown age');
+  eq(report[1][6], '30h', 'a known age');
+});
+
+t('an unscored row is not reported as a zero', function () {
+  var rows = [foundRow('A Co', 'Analyst', 'Austin, TX')];
+  eq(reportRows_(fakeBook(rows), { report_threshold: 0 }).length, 0, 'reported');
+});
+
+// -------------------------------------------------------------- spend ceiling
+
+t('no request leaves the script once the day is over budget', function () {
+  var store = {
+    SPEND_DAY: new Date().toISOString().substring(0, 10),
+    SPEND_USD: String(CONFIG.DAILY_BUDGET_USD)
+  };
+  var fetched = false;
+
+  withGlobals({
+    UrlFetchApp: { fetch: function () { fetched = true; throw new Error('should not run'); } }
+  }, function () {
+    withProps(store, function () {
+      throws(function () { apiFetch_(CONFIG.BATCH_URL, 'post', { requests: [] }); },
+             'daily budget reached', 'over budget');
+      ok(!fetched, 'the request was sent anyway');
+    });
+  });
+});
+
+t('an unpriced model cannot silently escape the ledger', function () {
+  [CONFIG.SCORE_MODEL, CONFIG.DRAFT_MODEL, CONFIG.PARSE_MODEL].forEach(function (model) {
+    ok(CONFIG.PRICE_PER_MTOK[model], model + ' has no entry in PRICE_PER_MTOK');
+  });
+});
+
+t('a batch result is billed at half price', function () {
+  var store = {};
+  var usage = { input_tokens: 1e6, output_tokens: 0 };
+  withProps(store, function () {
+    var live = recordSpend_('claude-haiku-4-5', usage, 1);
+    store.SPEND_USD = '0';
+    var batched = recordSpend_('claude-haiku-4-5', usage, CONFIG.BATCH_DISCOUNT);
+    eq(live, 1, 'a million input tokens of Haiku at full price');
+    eq(batched, 0.5, 'the same at batch rates');
+  });
+});
+
+// -------------------------------------------------------------- the load order
+
+t('nothing derived from Config.gs is built at load time', function () {
+  // Apps Script evaluates project files alphabetically, so Apply.gs, Claude.gs
+  // and Extract.gs all run before Config.gs. Anything built into a top-level
+  // var from CONFIG or WEIGHTS is undefined when it is built, and
+  // JSON.stringify drops undefined keys without complaining - which is how a
+  // schema that constrains nothing gets shipped.
+  var schema = scoreSchema_();
+  eq(Object.keys(schema.properties).length, 8, 'schema properties');
+  eq(schema.additionalProperties, false, 'additionalProperties');
+
+  var dims = [];
+  for (var i = 0; i < WEIGHTS.length; i++) dims.push(WEIGHTS[i].dim);
+  for (var d = 0; d < dims.length; d++) {
+    ok(schema.properties[dims[d]], 'the schema is missing ' + dims[d]);
+    ok(schema.required.indexOf(dims[d]) !== -1, dims[d] + ' is not required');
+  }
+});
+
+t('the status vocabulary is exactly the spec\'s four', function () {
+  eq(STATUSES.sort(), ['APPLIED', 'BLOCKED', 'FOUND', 'NEEDS INPUT'], 'statuses');
+});
