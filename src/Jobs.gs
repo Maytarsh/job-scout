@@ -15,7 +15,7 @@
 /**
  * Strip a company name down to its identity.
  *
- * "Tishman Speyer", "Tishman Speyer, Inc." and "TISHMAN SPEYER LLC" are one
+ * "Marlow Ridge", "Marlow Ridge, Inc." and "MARLOW RIDGE LLC" are one
  * employer, and a board that renders any two of those spellings would
  * otherwise produce two rows and two scores for the same job.
  */
@@ -51,16 +51,19 @@ function normalizeTitle_(title) {
  *
  * Every board writes a location differently — "Remote - US", "Remote, US" and
  * "US Remote" are one place — and the state abbreviation is expanded so
- * "Los Angeles, CA" and "Los Angeles, California" agree.
+ * "Portland, OR" and "Portland, Oregon" agree.
  */
 function normalizeLocation_(location) {
   var text = basicNormalize_(location)
     .replace(/\bunited states of america\b/g, 'us')
     .replace(/\bunited states\b/g, 'us')
     .replace(/\busa\b/g, 'us')
-    .replace(/\bca\b/g, 'california')
-    .replace(/\bny\b/g, 'new york')
-    .replace(/\btx\b/g, 'texas');
+    // Expanded from the shared table rather than from a handful of states
+    // written out here: whoever runs this is looking somewhere, and the three
+    // states the sample profile happens to name are not necessarily theirs.
+    .replace(/\b([a-z]{2})\b/g, function (whole, abbreviation) {
+      return US_STATES[abbreviation] || whole;
+    });
 
   if (/\bremote\b/.test(text)) {
     var rest = text.replace(/\b(remote|hybrid|onsite|on site)\b/g, ' ')

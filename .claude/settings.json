@@ -1,0 +1,36 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/require-branch.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking the branch..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/check-load-order.sh\" 2>/dev/null || true",
+            "timeout": 10,
+            "statusMessage": "Checking Apps Script load order..."
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/check-no-personal-data.sh\" 2>/dev/null || true",
+            "timeout": 10,
+            "statusMessage": "Checking for person-specific data in src/..."
+          }
+        ]
+      }
+    ]
+  }
+}

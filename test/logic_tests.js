@@ -176,6 +176,18 @@ t('the same place written four ways is one place', function () {
      'state abbreviation');
 });
 
+t('state abbreviations expand for every state, not a chosen few', function () {
+  // The first version of this expanded CA, NY and TX - which were the three
+  // states in the sample profile. Anyone running this from anywhere else got
+  // two rows for one job and no indication why.
+  eq(normalizeLocation_('Miami, FL'), normalizeLocation_('Miami, Florida'), 'FL');
+  eq(normalizeLocation_('Chicago, IL'), normalizeLocation_('Chicago, Illinois'), 'IL');
+  eq(normalizeLocation_('Seattle, WA'), normalizeLocation_('Seattle, Washington'), 'WA');
+  // Not every two-letter word is a state: "Washington DC" must not become
+  // something else on its way through.
+  ok(normalizeLocation_('Boston, MA').indexOf('massachusetts') !== -1, 'MA');
+});
+
 t('the same job from two sources collapses to one key', function () {
   var fromAts = dedupeKey_('Marlow Ridge Partners, Inc.',
                            'Analyst, Acquisitions (Req 4471)', 'Los Angeles, CA');

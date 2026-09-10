@@ -228,8 +228,32 @@ var SOURCE_TYPES = [
   'ats_greenhouse', 'ats_lever', 'ats_ashby', 'aggregator', 'careers_url'
 ];
 
+/**
+ * State abbreviation to state name. Person-agnostic reference data, not
+ * configuration — it is here so that "Austin, TX" and "Austin, Texas" produce
+ * one dedupe key rather than two rows for one job, whoever is running this and
+ * wherever they are looking.
+ *
+ * The tooling that keeps person-specific values out of src/ knows this block by
+ * name; see .claude/hooks/check-no-personal-data.sh.
+ */
+var US_STATES = {
+  al: 'alabama', ak: 'alaska', az: 'arizona', ar: 'arkansas', ca: 'california',
+  co: 'colorado', ct: 'connecticut', de: 'delaware', fl: 'florida',
+  ga: 'georgia', hi: 'hawaii', id: 'idaho', il: 'illinois', ia: 'iowa',
+  ks: 'kansas', ky: 'kentucky', la: 'louisiana', me: 'maine',
+  md: 'maryland', ma: 'massachusetts', mi: 'michigan', mn: 'minnesota',
+  ms: 'mississippi', mo: 'missouri', mt: 'montana', ne: 'nebraska',
+  nv: 'nevada', nh: 'new hampshire', nj: 'new jersey', nm: 'new mexico',
+  ny: 'new york', nc: 'north carolina', nd: 'north dakota', oh: 'ohio',
+  ok: 'oklahoma', or: 'oregon', pa: 'pennsylvania', ri: 'rhode island',
+  sc: 'south carolina', sd: 'south dakota', tn: 'tennessee', tx: 'texas',
+  ut: 'utah', vt: 'vermont', va: 'virginia', wa: 'washington',
+  wv: 'west virginia', wi: 'wisconsin', wy: 'wyoming', dc: 'washington dc'
+};
+
 // Company-name suffixes that carry no identity, stripped when building the
-// dedupe key. "Tishman Speyer" and "Tishman Speyer, Inc." are one employer.
+// dedupe key. "Marlow Ridge" and "Marlow Ridge, Inc." are one employer.
 var COMPANY_SUFFIXES = [
   'inc', 'incorporated', 'llc', 'l l c', 'llp', 'ltd', 'limited', 'corp',
   'corporation', 'co', 'company', 'plc', 'gmbh', 'holdings', 'group',

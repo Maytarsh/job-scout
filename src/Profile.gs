@@ -244,9 +244,9 @@ function readAnswers_() {
  *
  * The order is fixed and the first rule is the important one. A question marked
  * humanOnly is answered from the Answers tab or not at all — never from the
- * resume, never by the model, never by inference. The resume can say "H-1B,
- * eligible from some date" and that still does not answer "do you require
- * sponsorship"; the two questions are related and the answers are not the same,
+ * resume, never by the model, never by inference. The resume can say someone
+ * holds an H-1B and is eligible from some date, and that still does not answer
+ * "do you require sponsorship"; the two questions are related and the answers are not the same,
  * and the cost of getting it wrong is a false statement on a real application
  * submitted under someone's name.
  *
