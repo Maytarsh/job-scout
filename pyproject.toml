@@ -1,0 +1,8 @@
+[project]
+name = "job-scout-tools"
+version = "0.1.0"
+description = "Local-only tooling for the job-scout Apps Script project: the logic test harness and the batch API probe."
+requires-python = ">=3.9"
+dependencies = [
+    "selenium>=4.20",
+]
