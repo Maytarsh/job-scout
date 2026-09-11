@@ -1006,6 +1006,34 @@ t('nothing derived from Config.gs is built at load time', function () {
   }
 });
 
+t('every sample source row is a type the dispatcher knows', function () {
+  // Seventeen of the first eighteen sample slugs were dead on arrival. The
+  // slugs themselves cannot be checked without a network, but a row whose type
+  // is misspelled is a row that fails for a reason nobody should have to
+  // diagnose from an _Errors tab on their first morning.
+  var rows = sampleSources_();
+  ok(rows.length >= 15, 'only ' + rows.length + ' sample source(s)');
+  for (var i = 0; i < rows.length; i++) {
+    ok(SOURCE_TYPES.indexOf(rows[i][S_TYPE]) !== -1,
+       'unknown sample type "' + rows[i][S_TYPE] + '"');
+    ok(String(rows[i][S_REF]).trim(), 'sample row ' + i + ' has no slug');
+    ok(String(rows[i][S_LABEL]).indexOf('SAMPLE') === 0,
+       'sample row ' + i + ' is not marked SAMPLE');
+  }
+});
+
+t('the optional aggregator ships switched off', function () {
+  // It needs a key that does not ship. Enabled by default it would write an
+  // error row on every single run, and a deployer would learn to ignore the
+  // _Errors tab - which is where everything that actually matters is reported.
+  var rows = sampleSources_();
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i][S_TYPE] === 'aggregator') {
+      eq(truthy_(rows[i][S_ENABLED]), false, 'the aggregator row is enabled');
+    }
+  }
+});
+
 t('the status vocabulary is exactly the spec\'s four', function () {
   eq(STATUSES.sort(), ['APPLIED', 'BLOCKED', 'FOUND', 'NEEDS INPUT'], 'statuses');
 });

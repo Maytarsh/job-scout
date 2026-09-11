@@ -177,9 +177,13 @@ every morning. If you update your resume, use **Job scout → Re-read the resume
 
 ## Choosing your sources
 
-Open the **Sources** tab. Each row is one place to look. It ships with about twenty
-sample employers so you can see the shape; replace them with companies you would actually
-work for.
+Open the **Sources** tab. Each row is one place to look. It ships with twenty sample
+employers — real estate, proptech and fintech — so you can see the shape and so the first
+run returns something real. Replace them with companies you would actually work for.
+
+Board names go stale as companies switch systems, so run **Job scout → Check sources**
+before you rely on them. A dead row costs you nothing else: it writes a note in the
+\_Errors tab and every other source still runs.
 
 | Type | Put in "Slug or URL" | Where to find it |
 |---|---|---|

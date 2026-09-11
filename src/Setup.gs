@@ -176,12 +176,18 @@ function sampleProfile_() {
 /**
  * The Sources tab as it ships.
  *
- * Twenty real-estate and finance employers as a worked example of each type.
- * They are guesses at board names and some will be wrong — a company that has
- * changed ATS since this was written writes an error row saying so, and the
- * rest of the run is unaffected. That is the designed behaviour, and "Check
- * sources" on the menu is how to find out which ones are live before the first
- * real morning.
+ * Twenty employers across real estate, proptech, construction technology and
+ * fintech, as a worked example of each type. **Every slug here was live when it
+ * was written (checked 2026-09-11)** — the first version of this file guessed at
+ * board names and seventeen of eighteen were wrong, which is a sample tab that
+ * teaches a new deployer nothing except that the tool appears broken.
+ *
+ * They will go stale anyway: companies change ATS, and a board name changes with
+ * it. That is the designed behaviour rather than a failure — a dead row writes
+ * an _Errors row saying what to do and the rest of the run is unaffected — and
+ * "Check sources" on the menu is how to find out which are still live before a
+ * first real morning. Replace them with employers you would actually work for;
+ * that is the point of the tab.
  *
  * The aggregator row ships disabled and with no key. It is the one source that
  * searches across employers rather than within one, and it is optional: a
@@ -190,26 +196,26 @@ function sampleProfile_() {
  */
 function sampleSources_() {
   var sample = [
-    ['ats_greenhouse', 'tishmanspeyer', 'SAMPLE: Tishman Speyer'],
-    ['ats_greenhouse', 'hines', 'SAMPLE: Hines'],
-    ['ats_greenhouse', 'relatedcompanies', 'SAMPLE: Related Companies'],
-    ['ats_greenhouse', 'brookfield', 'SAMPLE: Brookfield'],
-    ['ats_greenhouse', 'cim', 'SAMPLE: CIM Group'],
-    ['ats_greenhouse', 'kilroyrealty', 'SAMPLE: Kilroy Realty'],
-    ['ats_greenhouse', 'douglasemmett', 'SAMPLE: Douglas Emmett'],
-    ['ats_greenhouse', 'lincolnpropertycompany', 'SAMPLE: Lincoln Property'],
-    ['ats_lever', 'cadre', 'SAMPLE: Cadre'],
+    ['ats_greenhouse', 'carta', 'SAMPLE: Carta'],
+    ['ats_greenhouse', 'roofstock', 'SAMPLE: Roofstock'],
+    ['ats_greenhouse', 'orchard', 'SAMPLE: Orchard'],
+    ['ats_greenhouse', 'betterment', 'SAMPLE: Betterment'],
+    ['ats_greenhouse', 'dealpath', 'SAMPLE: Dealpath'],
+    ['ats_greenhouse', 'homelight', 'SAMPLE: HomeLight'],
+    ['ats_greenhouse', 'vts', 'SAMPLE: VTS'],
+    ['ats_greenhouse', 'crexi', 'SAMPLE: Crexi'],
+    ['ats_greenhouse', 'blend', 'SAMPLE: Blend'],
+    ['ats_greenhouse', 'figure', 'SAMPLE: Figure'],
+    ['ats_greenhouse', 'northspyre', 'SAMPLE: Northspyre'],
+    ['ats_greenhouse', 'pacaso', 'SAMPLE: Pacaso'],
+    ['ats_greenhouse', 'doma', 'SAMPLE: Doma'],
+    ['ats_greenhouse', 'homeward', 'SAMPLE: Homeward'],
+    ['ats_lever', 'wealthfront', 'SAMPLE: Wealthfront'],
+    ['ats_lever', 'entrata', 'SAMPLE: Entrata'],
     ['ats_lever', 'fundrise', 'SAMPLE: Fundrise'],
-    ['ats_lever', 'roofstock', 'SAMPLE: Roofstock'],
-    ['ats_lever', 'divvyhomes', 'SAMPLE: Divvy Homes'],
-    ['ats_ashby', 'ledgeinvestments', 'SAMPLE: Ledge Investments'],
+    ['ats_lever', 'cherre', 'SAMPLE: Cherre'],
     ['ats_ashby', 'junipersquare', 'SAMPLE: Juniper Square'],
-    ['ats_ashby', 'northspyre', 'SAMPLE: Northspyre'],
-    ['ats_greenhouse', 'jll', 'SAMPLE: JLL'],
-    ['ats_greenhouse', 'cbre', 'SAMPLE: CBRE'],
-    ['ats_greenhouse', 'greystar', 'SAMPLE: Greystar'],
-    ['careers_url', 'https://example.invalid/careers/analyst',
-      'SAMPLE: any careers page, one posting per row']
+    ['ats_ashby', 'tomo', 'SAMPLE: Tomo']
   ];
 
   var rows = sample.map(function (row) {
