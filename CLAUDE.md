@@ -138,6 +138,15 @@ markup around 600 tokens of description.
 - `callAnthropic_` and `apiFetch_` are the only places a request leaves the script, so
   the daily ceiling is enforced there rather than at the call sites: a new menu item
   cannot spend past it by forgetting to ask.
+- **The model id in a response is not the one you sent.** An alias resolves to the dated
+  snapshot it points at, so `claude-haiku-4-5` goes out and `claude-haiku-4-5-20251001`
+  comes back — and a batch result is priced from the response, because that is the only
+  place its usage exists. Looking the dated id up directly finds nothing, and the batch
+  pass is almost all of what this spends: the ledger read `$0.00` and the ceiling was
+  holding nothing, while the report arrived every morning looking entirely correct. Price
+  through `priceFor_()`, which strips the date and errs high on an id it does not know.
+  A guard that errs low is not a guard. Two tests cover it; the one that existed before
+  only checked the ids we *send*.
 - A job posting is text an employer wrote and nobody vetted. Fence it, say the fence
   means untrusted input, and strip the angle brackets that would let it close the fence —
   `scoreUserPrompt_` and `draftFromModel_` both do.

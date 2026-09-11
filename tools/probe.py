@@ -6,12 +6,15 @@ and it is the only thing that proves the parts no logic test can reach: that the
 batch request shape is accepted, that structured outputs come back parseable,
 and above all that the results retrieval works.
 
-That last one is the reason this file exists. results_url is a signed redirect
-to object storage. The signature is the authorisation, so the second request
-must carry no Anthropic credential at all - forwarding x-api-key to it sends the
-key somewhere it does not belong and gets the request rejected for having it.
-There is no way to discover that from a unit test and no way to discover it
-safely at 6am, so it is exercised here deliberately.
+That last one is the reason this file exists. results_url is documented as a
+signed redirect to object storage, where the signature is the authorisation and
+the second request must therefore carry no Anthropic credential at all -
+forwarding x-api-key to it sends the key somewhere it does not belong and gets
+the request rejected for having it. In practice, on a one-request batch, the API
+answered the authenticated request with the body directly and never redirected.
+Both paths are implemented in src/Claude.gs and here, because which one you get
+is the API's business and the cost of guessing wrong is a whole morning's
+scores. Run this to find out which one is live today.
 
 Standalone and stdlib-only on purpose: it must be runnable when nothing else is.
 That means it restates what src/ already says, and test/run_tests.py compares
@@ -21,6 +24,7 @@ Usage:  ANTHROPIC_API_KEY=sk-... uv run python tools/probe.py
 """
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -99,6 +103,24 @@ def batch_params():
         "output_config": {"format": {"type": "json_schema",
                                      "schema": SCORE_SCHEMA}},
     }
+
+
+def price_for(model):
+    """Mirrors priceFor_() in src/Claude.gs.
+
+    The id in a response is not the id in the request: an alias resolves to the
+    dated snapshot it points at, so claude-haiku-4-5 goes out and
+    claude-haiku-4-5-20251001 comes back. This probe crashing on that is how the
+    same lookup was found silently charging zero in the .gs ledger.
+    """
+    if model in PRICE_PER_MTOK:
+        return PRICE_PER_MTOK[model]
+    undated = re.sub(r"-\d{8}$", "", model)
+    if undated in PRICE_PER_MTOK:
+        return PRICE_PER_MTOK[undated]
+    worst = max(PRICE_PER_MTOK.values(), key=lambda p: p["input"])
+    print(f"  no price for {model!r}; using the highest known rate")
+    return worst
 
 
 def api_key():
@@ -207,7 +229,7 @@ def main():
         sys.exit(f"response was missing {missing}")
 
     usage = message["usage"]
-    price = PRICE_PER_MTOK[message["model"]]
+    price = price_for(message["model"])
     cost = (usage["input_tokens"] * price["input"] / 1e6
             + usage["output_tokens"] * price["output"] / 1e6) * BATCH_DISCOUNT
 

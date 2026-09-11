@@ -43,14 +43,50 @@ function spendToday_() {
 }
 
 /**
+ * What a model costs, per million tokens.
+ *
+ * The id in a response is not the id in the request. An alias resolves to the
+ * dated snapshot it currently points at, so 'claude-haiku-4-5' goes out and
+ * 'claude-haiku-4-5-20251001' comes back — and a batch result is priced from
+ * the response, because that is the only place its usage exists. Looking the
+ * dated id up directly finds nothing, and the bulk of this system's spending is
+ * the batch pass, so the whole ledger read zero and the daily ceiling never
+ * engaged. Nothing looked wrong: the report arrived, the runs tab showed $0.00,
+ * and the guard that exists to bound a runaway was not holding anything.
+ *
+ * An id that is still unknown after the date suffix comes off is priced at the
+ * most expensive rate in the table rather than at nothing. A guard that errs
+ * high stops a run early and costs an explanation; one that errs low is not a
+ * guard.
+ */
+function priceFor_(model) {
+  var table = CONFIG.PRICE_PER_MTOK;
+  var id = String(model || '');
+  if (table[id]) return table[id];
+
+  var undated = id.replace(/-\d{8}$/, '');
+  if (table[undated]) return table[undated];
+
+  var worst = { input: 0, output: 0 };
+  Object.keys(table).forEach(function (known) {
+    if (table[known].input > worst.input) worst = table[known];
+  });
+  Logger.log('no price for model "' + id + '"; charging the ledger at the ' +
+             'highest known rate ($' + worst.input + '/$' + worst.output +
+             ' per MTok) so the daily ceiling still bounds it. Add it to ' +
+             'CONFIG.PRICE_PER_MTOK.');
+  return worst;
+}
+
+/**
  * Price one response from its own usage and add it to the day's total.
  *
  * discount is 1 for a live call and CONFIG.BATCH_DISCOUNT for a batch result.
  * Returns the cost so a caller can log it.
  */
 function recordSpend_(model, usage, discount) {
-  var price = CONFIG.PRICE_PER_MTOK[model];
-  if (!price || !usage) return 0;
+  if (!usage) return 0;
+  var price = priceFor_(model);
 
   var input = (usage.input_tokens || 0) +
               (usage.cache_read_input_tokens || 0) +
@@ -115,10 +151,10 @@ function apiFetch_(url, method, payload) {
   throw new Error('Anthropic API retries exhausted: ' + lastBody.substring(0, 500));
 }
 
-/** A live Messages call. Priced at full rate. */
+/** A live Messages call. Priced at full rate, from the id the response carries. */
 function callAnthropic_(payload) {
   var parsed = apiFetch_(CONFIG.API_URL, 'post', payload);
-  recordSpend_(payload.model, parsed.usage, 1);
+  recordSpend_(parsed.model || payload.model, parsed.usage, 1);
   return parsed;
 }
 
@@ -452,7 +488,11 @@ function batchResults_(resultsUrl) {
     }
     body = second.getContentText();
   } else if (code === 200) {
-    // Handled in case the API stops redirecting. Not the path taken today.
+    // What the API actually did when this was last exercised against it: the
+    // authenticated request was answered with the body, no redirect. The
+    // redirect branch above stays because results_url is documented as a
+    // redirect to storage and a larger result set may well be served that way
+    // — and the cost of being wrong about it is the whole morning's scores.
     body = first.getContentText();
   } else {
     throw new Error('batch results returned ' + code + ': ' +

@@ -974,6 +974,52 @@ t('an unpriced model cannot silently escape the ledger', function () {
   });
 });
 
+t('the dated id a response carries is priced like the alias that was sent', function () {
+  // This is the version of the test above that would have caught the real bug.
+  // The one above checks the ids we send; the ledger prices the ids we get
+  // back, and those are not the same string. A live probe answered with
+  // 'claude-haiku-4-5-20251001' for a request that said 'claude-haiku-4-5',
+  // found no price, and charged zero - for the batch pass, which is almost all
+  // of what this system spends.
+  [CONFIG.SCORE_MODEL, CONFIG.DRAFT_MODEL, CONFIG.PARSE_MODEL].forEach(function (model) {
+    eq(priceFor_(model + '-20251001'), CONFIG.PRICE_PER_MTOK[model],
+       model + ' dated');
+  });
+});
+
+t('a model nobody has priced errs high rather than free', function () {
+  var unknown = priceFor_('claude-something-nobody-added-5');
+  var worst = { input: 0, output: 0 };
+  Object.keys(CONFIG.PRICE_PER_MTOK).forEach(function (known) {
+    if (CONFIG.PRICE_PER_MTOK[known].input > worst.input) {
+      worst = CONFIG.PRICE_PER_MTOK[known];
+    }
+  });
+  eq(unknown, worst, 'an unknown model was not priced at the highest rate');
+  ok(unknown.input > 0, 'an unknown model was priced at zero');
+});
+
+t('a batch result reaches the ledger at all', function () {
+  // The end-to-end version: a succeeded result carrying a dated model id must
+  // move SPEND_USD. It read zero here, and a run that spends nothing never
+  // trips the ceiling that exists to bound a runaway.
+  var rows = [foundRow('Marlow Ridge', 'Analyst', 'Austin, TX')];
+  var book = fakeBook(rows);
+  var result = batchResult('a', [80, 80, 80, 80, 80]);
+  result.result.message.model = CONFIG.SCORE_MODEL + '-20251001';
+  var results = {};
+  results[jobCustomId_(rows[0][J_KEY])] = result;
+
+  var store = {};
+  var outcome = withProps(store, function () {
+    return applyScores_(book, validateProfile_(validProfileRaw()), results);
+  });
+
+  eq(outcome.scored, 1, 'scored');
+  ok(Number(store.SPEND_USD) > 0,
+     'the batch pass was recorded as free: SPEND_USD is ' + store.SPEND_USD);
+});
+
 t('a batch result is billed at half price', function () {
   var store = {};
   var usage = { input_tokens: 1e6, output_tokens: 0 };
