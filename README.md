@@ -227,8 +227,9 @@ aggregators for coverage, company boards for the employers you care about.
 
 To use one you need a free key in **Project Settings → Script Properties**:
 
-- **Careerjet** — register at `careerjet.com/partners/api/`, then add
-  `CAREERJET_AFFID`. Covers both Israel and the US.
+- **Careerjet** — register at `careerjet.com/partners/api/`, sign in, and open
+  your **Publisher account**; the API key is issued there, per publisher site.
+  Add it as `CAREERJET_API_KEY`. Covers both Israel and the US.
 - **Adzuna** — register at `developer.adzuna.com`, then add `ADZUNA_APP_ID` and
   `ADZUNA_APP_KEY`. **Adzuna does not index Israel**; the row will tell you so
   rather than quietly searching somewhere else.

@@ -402,45 +402,65 @@ function aggregatorQuery_(ref, profile) {
  * Careerjet. The open half of the search: any employer, not only the ones on
  * the Sources tab.
  *
- * What comes back is a search result rather than a posting — roughly seventy
- * tokens of description, cut mid-sentence, almost never a salary, and a link
- * through a redirect rather than to the employer. That is the trade for reach,
- * and it is why the ats_* rows still earn their place: the scorer has far less
- * to work with here, and the spec prefers applying to the employer directly.
+ * Authenticated with HTTP Basic, the API key as the user name and an empty
+ * password — that is what a Publisher account issues. user_ip and user_agent
+ * are required and neither is meaningful from a server; the API rejects them
+ * empty and accepts any value in them.
  *
- * One page of fifty, newest first. Anything older than the freshness window
- * would be filtered out by the time it reached the Sheet, and anything newer
- * arrives on tomorrow's run, so paging deeper only buys jobs that are about to
- * be discarded.
+ * fragment_size is asked for explicitly. Left alone it returns 120 characters,
+ * which is a headline rather than a description and nowhere near enough to
+ * judge a job on — the scorer would be reading titles. Asking for the same
+ * budget every other source gets costs nothing and is what makes an aggregator
+ * row comparable to a company board rather than merely a lead.
+ *
+ * One page, newest first, for the same reason the freshness filter exists.
  */
 function fetchCareerjet_(ref, profile) {
   var query = aggregatorQuery_(ref, profile);
-  var affid = PropertiesService.getScriptProperties().getProperty('CAREERJET_AFFID');
-  if (!affid) {
-    throw new Error('aggregator key is not set: CAREERJET_AFFID');
+  var apiKey = PropertiesService.getScriptProperties()
+    .getProperty('CAREERJET_API_KEY');
+  if (!apiKey) {
+    throw new Error('aggregator key is not set: CAREERJET_API_KEY');
   }
 
   var url = CAREERJET_URL +
-    '?affid=' + encodeURIComponent(affid) +
-    '&locale_code=' + encodeURIComponent(query.region.careerjet_locale) +
+    '?locale_code=' + encodeURIComponent(query.region.careerjet_locale) +
     '&keywords=' + encodeURIComponent(query.what) +
     (query.where ? '&location=' + encodeURIComponent(query.where) : '') +
     '&sort=date' +
-    '&pagesize=' + CAREERJET_PAGE_SIZE +
-    // Both are mandatory and neither is meaningful from a server: the API
-    // rejects an empty user_ip outright but accepts any value in it.
+    '&page=1' +
+    '&page_size=' + CAREERJET_PAGE_SIZE +
+    '&fragment_size=' + (CONFIG.MAX_DESC_TOKENS * CONFIG.CHARS_PER_TOKEN) +
     '&user_ip=0.0.0.0' +
     '&user_agent=' + encodeURIComponent('job-scout');
 
-  // The Referer is mandatory too — without it every call comes back as
-  // "Undeclared referrer" with an HTTP 200, which would otherwise read as a
-  // quiet morning with no matches.
-  var data = JSON.parse(httpGet_(url, {
-    headers: { 'Referer': 'https://script.google.com/job-scout' }
-  }));
+  var body = httpGet_(url, {
+    headers: {
+      Authorization: 'Basic ' + Utilities.base64Encode(apiKey + ':')
+    }
+  });
+
+  var data;
+  try {
+    data = JSON.parse(body);
+  } catch (err) {
+    throw new Error('Careerjet did not return JSON: ' + body.substring(0, 200));
+  }
 
   if (data.type === 'ERROR') {
-    throw new Error('Careerjet refused the query: ' + (data.error || 'no reason given'));
+    throw new Error('Careerjet refused the query: ' +
+                    (data.error || 'no reason given'));
+  }
+
+  // Not an error and not a result: the location did not resolve to a place
+  // Careerjet knows, or resolved to several. Either way no search happened, and
+  // an empty jobs list would read as a morning with nothing new rather than as
+  // a row that has never worked.
+  if (data.type === 'LOCATIONS') {
+    var choices = (data.locations || []).slice(0, 5).join(', ');
+    throw new Error('Careerjet could not resolve the location "' + query.where +
+                    '": ' + (data.message || 'no match') +
+                    (choices ? '. Try one of: ' + choices : ''));
   }
 
   var found = data.jobs || [];
@@ -454,8 +474,8 @@ function fetchCareerjet_(ref, profile) {
       salary: job.salary,
       url: job.url,
       posted: job.date,
-      // Already a plain-text snippet, but it carries <b> highlight tags around
-      // the matched terms, so it goes through the pipeline like anything else.
+      // Plain text already, but the matched terms come wrapped in <b> tags, so
+      // it goes through the pipeline like anything else.
       description: htmlToText_(job.description)
     }));
   }

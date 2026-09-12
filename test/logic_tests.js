@@ -275,6 +275,55 @@ t('an aggregator row without a region says so instead of guessing one', function
          'unknown region', 'bad override');
 });
 
+t('an unresolved aggregator location is an error, not an empty morning', function () {
+  // Careerjet answers a location it cannot place with type LOCATIONS and no
+  // jobs. Read as a normal response that is a row which has never worked and
+  // never will, reporting zero matches every day, indistinguishable from a
+  // quiet market.
+  var responses = [
+    { type: 'LOCATIONS', locations: [], message: 'no matching location found' },
+    { type: 'LOCATIONS', locations: ['Tel Aviv', 'Tel Aviv District'],
+      message: 'multiple locations found' }
+  ];
+  responses.forEach(function (body) {
+    var threw = '';
+    withGlobals({
+      PropertiesService: {
+        getScriptProperties: function () {
+          return { getProperty: function () { return 'key'; },
+                   setProperty: function () {}, deleteProperty: function () {} };
+        }
+      },
+      httpGet_: function () { return JSON.stringify(body); }
+    }, function () {
+      try { fetchCareerjet_('python@Nowhere', { region: 'IL' }); }
+      catch (e) { threw = String(e.message); }
+    });
+    ok(threw.indexOf('could not resolve the location') !== -1,
+       'silently returned nothing: ' + threw);
+  });
+});
+
+t('a Careerjet row asks for a real description, not a headline', function () {
+  var asked = '';
+  withGlobals({
+    PropertiesService: {
+      getScriptProperties: function () {
+        return { getProperty: function () { return 'key'; },
+                 setProperty: function () {}, deleteProperty: function () {} };
+      }
+    },
+    httpGet_: function (url) { asked = url; return JSON.stringify({ type: 'JOBS', jobs: [] }); }
+  }, function () {
+    fetchCareerjet_('python@Tel Aviv', { region: 'IL' });
+  });
+
+  ok(asked.indexOf('fragment_size=' + (CONFIG.MAX_DESC_TOKENS * CONFIG.CHARS_PER_TOKEN)) !== -1,
+     'fragment_size was left at the 120-character default: ' + asked);
+  ok(asked.indexOf('locale_code=en_IL') !== -1, 'wrong locale: ' + asked);
+  ok(asked.indexOf('sort=date') !== -1, 'not sorted newest first');
+});
+
 t('Adzuna refuses Israel rather than searching the wrong country', function () {
   // It publishes no Israeli index, and the request returns a US-shaped error
   // page - which would parse as an empty result and read as a quiet morning.

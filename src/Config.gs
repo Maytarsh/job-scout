@@ -267,11 +267,20 @@ var REGIONS = {
   }
 };
 
-// Careerjet's public API. pagesize caps at 50 — asking for 100 silently returns
-// 20 — and sort=date puts the newest first, which is what makes one page enough:
-// anything older than the freshness window would be filtered out anyway, and
-// anything newer arrives tomorrow instead.
-var CAREERJET_URL = 'http://public.api.careerjet.net/search';
+// Careerjet's v4 API. Authenticated with HTTP Basic — the API key is the user
+// name and the password is empty — which is what a Publisher account issues
+// today. The older public.api.careerjet.net/search endpoint still answers, but
+// it wants an affiliate id that a new registration no longer hands out.
+//
+// sort=date puts the newest first, which is what makes one page enough: older
+// than the freshness window and it would be filtered out anyway, newer and it
+// arrives on tomorrow's run.
+//
+// fragment_size is the interesting one. The excerpt defaults to 120 characters
+// — a headline, not a description, and far too little to score a job on. Asking
+// for the full token budget instead is free and turns an aggregator row from a
+// lead into something the scorer can actually read.
+var CAREERJET_URL = 'https://search.api.careerjet.net/v4/query';
 var CAREERJET_PAGE_SIZE = 50;
 
 /**
