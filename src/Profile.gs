@@ -116,6 +116,12 @@ function validateProfile_(raw) {
                           String(raw.email_report).trim() === '')
     ? true : profile.email_report;
 
+  // Unset means on, for the same reason: the default should be the one that
+  // does not quietly spend money on jobs nobody can take.
+  profile.only_my_locations = (raw.only_my_locations === undefined ||
+                               String(raw.only_my_locations).trim() === '')
+    ? true : profile.only_my_locations;
+
   return profile;
 }
 

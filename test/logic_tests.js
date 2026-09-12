@@ -499,6 +499,63 @@ t('an unknown age is never filtered out by the freshness rule', function () {
   ok(!isFreshEnough_(73, 72), '73h passed a 72h limit');
 });
 
+// ------------------------------------------------- paying only for reachable jobs
+
+t('a job in a country the candidate never listed is not scored at all', function () {
+  // On one real run, 274 of 366 ingested postings were in India, the US, the
+  // Philippines and Czechia. Every one was fetched, stored and sent to the
+  // model, every one came back in single digits, and three quarters of that
+  // run's cost bought nothing.
+  var profile = { only_my_locations: true, locations: ['Tel Aviv', 'Herzliya'] };
+  ok(wantsLocation_('Tel Aviv District, Israel', profile), 'the long form');
+  ok(wantsLocation_('Herzliya', profile), 'exact');
+  ok(!wantsLocation_('India', profile), 'India was ingested');
+  ok(!wantsLocation_('Manila, Manila, Philippines', profile), 'Manila');
+  ok(!wantsLocation_('Austin, Texas, United States', profile), 'Austin');
+  ok(!wantsLocation_('Prague, Czech Republic', profile), 'Prague');
+});
+
+t('what cannot be judged is kept rather than thrown away', function () {
+  var profile = { only_my_locations: true, locations: ['Tel Aviv'] };
+  ok(wantsLocation_('', profile), 'a source that states no location');
+  ok(wantsLocation_('Remote', profile), 'remote');
+  ok(wantsLocation_('Remote - US', profile), 'remote anywhere');
+  ok(wantsLocation_('Anywhere', profile), 'anywhere');
+});
+
+t('the filter is off when it is turned off, and when nothing is listed', function () {
+  ok(wantsLocation_('India', { only_my_locations: false, locations: ['Tel Aviv'] }),
+     'switched off');
+  ok(wantsLocation_('India', { only_my_locations: true, locations: [] }),
+     'no locations to filter by');
+});
+
+t('the location filter defaults on, like the digest', function () {
+  var raw = validProfileRaw();
+  eq(validateProfile_(raw).only_my_locations, true, 'unset means on');
+  raw.only_my_locations = 'no';
+  eq(validateProfile_(raw).only_my_locations, false, 'explicitly off');
+});
+
+t('what the candidate rules out is put to the model as binding', function () {
+  // industry_fit scored an IT systems role at 72 for an infrastructure
+  // engineer who had never done system administration. Transferability is a
+  // reason to consider a neighbouring role, not a reason to overrule somebody
+  // about their own career.
+  var prompt = scoreSystemPrompt_(
+    { target_roles: ['Infrastructure Engineer'], locations: ['Tel Aviv'],
+      weight_industry_fit: 30, weight_experience: 35, weight_compensation: 0,
+      weight_location: 10, weight_interview_odds: 25,
+      notes: 'Not interested in IT or full-stack roles.' },
+    { current_title: 'Infrastructure Engineer' });
+
+  ok(prompt.indexOf('hard exclusion') !== -1, 'exclusions are not called binding');
+  ok(prompt.indexOf('Not interested in IT or full-stack roles.') !== -1,
+     'the notes did not reach the prompt verbatim');
+  ok(prompt.indexOf('function, not the industry alone') !== -1,
+     'nothing separates two roles that are both software');
+});
+
 // -------------------------------------------------------------------- scoring
 
 var WEIGHTS_100 = {

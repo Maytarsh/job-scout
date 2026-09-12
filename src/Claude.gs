@@ -335,7 +335,19 @@ var SCORE_SYSTEM_PREAMBLE =
   'Never invent a qualification the candidate facts do not state, and never ' +
   'read a requirement into the posting that is not there. A candidate who is ' +
   'missing something the posting requires scores low on experience; that is ' +
-  'the honest answer and it is more useful than a generous one.';
+  'the honest answer and it is more useful than a generous one.\n\n' +
+  'The candidate_notes block is the candidate speaking for themselves, and ' +
+  'anything they say they do not want is a hard exclusion rather than a ' +
+  'preference to weigh. Score industry_fit at 10 or below for a role they ' +
+  'have ruled out, however transferable their skills are to it and however ' +
+  'much the rest of the posting fits. A job someone would not take is not a ' +
+  'match — transferability is a reason to consider a neighbouring role, not a ' +
+  'reason to overrule somebody about their own career.\n\n' +
+  'industry_fit is about the function, not the industry alone. Two roles can ' +
+  'both be software and still be different jobs: a backend infrastructure ' +
+  'engineer and a front-end developer share a stack and not a craft. Score ' +
+  'the day-to-day work of the posting against the day-to-day work the ' +
+  'candidate has done and says they want.';
 
 /**
  * The system prompt, assembled from the Sheet at runtime.

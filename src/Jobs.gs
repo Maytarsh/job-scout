@@ -187,6 +187,41 @@ function isFreshEnough_(ageHours, maxAgeHours) {
   return Number(ageHours) <= Number(maxAgeHours);
 }
 
+/**
+ * Is this job somewhere the candidate would actually work?
+ *
+ * The freshness gate has a companion, and leaving it out was expensive. Every
+ * board carries roles worldwide: of 366 postings ingested on one real run, 92
+ * were in the deployer's country and 274 were in India, the United States, the
+ * Philippines and Czechia. All 274 were fetched, stored and sent to be scored,
+ * every one of them came back in the single digits, and three quarters of that
+ * run's cost bought nothing at all.
+ *
+ * Kept rather than dropped: a blank location, because a source that does not
+ * say is not the same as a source that says elsewhere, and anything remote.
+ *
+ * Location is still a scoring dimension. This does not replace it — it stops
+ * the caller paying a model to tell it that Manila is not Tel Aviv.
+ */
+function wantsLocation_(location, profile) {
+  if (!profile.only_my_locations) return true;
+
+  var wanted = (profile.locations || []);
+  if (!wanted.length) return true;
+
+  var text = String(location || '').trim();
+  if (!text) return true;
+  if (/\bremote\b|\banywhere\b|\bworldwide\b/i.test(text)) return true;
+
+  var place = normalizeLocation_(text);
+  for (var i = 0; i < wanted.length; i++) {
+    var want = normalizeLocation_(wanted[i]);
+    if (want.length < 3) continue;
+    if (place.indexOf(want) !== -1 || want.indexOf(place) !== -1) return true;
+  }
+  return false;
+}
+
 // --------------------------------------------------------------------- scoring
 
 /**

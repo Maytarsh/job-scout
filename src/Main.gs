@@ -50,6 +50,7 @@ function runDiscovery() {
     var found = fetchAllSources_(book, profile);
     var newJobs = 0;
     var skippedStale = 0;
+    var skippedElsewhere = 0;
     var now = new Date();
 
     for (var i = 0; i < found.jobs.length; i++) {
@@ -61,6 +62,10 @@ function runDiscovery() {
         skippedStale++;
         continue;
       }
+      if (!wantsLocation_(job.location, profile)) {
+        skippedElsewhere++;
+        continue;
+      }
       if (upsertJob_(book, job)) newJobs++;
     }
 
@@ -70,8 +75,8 @@ function runDiscovery() {
       sourcesFailed: found.failed,
       jobsSeen: found.jobs.length,
       newJobs: newJobs,
-      note: skippedStale + ' posting(s) older than ' +
-            profile.max_posting_age_hours + 'h were skipped'
+      note: skippedStale + ' too old, ' + skippedElsewhere +
+            ' outside your locations'
     });
 
     var submitted = submitPending_(book, profile);

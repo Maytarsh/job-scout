@@ -175,6 +175,9 @@ function sampleProfile_() {
     ['max_posting_age_hours', 72, 'Skip postings older than this. Postings ' +
       'whose age the source does not state are always kept and shown as ' +
       'UNKNOWN — never guessed.'],
+    ['only_my_locations', 'yes', 'Skip postings outside your locations before ' +
+      'they are scored. Remote roles and postings with no stated location are ' +
+      'always kept. Turning this off means paying to score jobs you cannot take.'],
     ['email_report', 'yes', 'Email the daily digest. It is sent even on ' +
       'zero-match days, which is how you know the whole thing is still ' +
       'running.'],

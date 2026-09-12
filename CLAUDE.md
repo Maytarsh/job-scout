@@ -236,6 +236,48 @@ exists — it is the maintenance that does not.
 - `UrlFetchApp.fetchAll` is what makes twenty-five companies fit in one
   execution — seventy-five sequential fetches would not.
 
+## Two gates before a job is scored, not one
+
+`isFreshEnough_` and `wantsLocation_`. The second was missing, and it was the
+largest avoidable cost in the system: on one real run 274 of 366 ingested
+postings were in India, the United States, the Philippines and Czechia for a
+deployer in Tel Aviv. All 274 were fetched, stored and sent to the model, all
+came back in single digits, and three quarters of that run's spend bought
+nothing. Every board carries roles worldwide; a company list is not a location
+filter.
+
+- Blank locations and anything remote are **kept**. A source that does not say
+  where is not a source saying elsewhere.
+- Location remains a scoring dimension. The gate stops the caller paying a model
+  to confirm that Manila is not Tel Aviv; the dimension still separates the
+  places someone would accept.
+
+## The scale has to be mostly signal
+
+Every dimension whose value is the same on every job is a constant added to
+every score, and thresholds are set as though 100 points of signal exist.
+
+- Where pay is not published, `compensation` returns 50 on everything: 7.5
+  points at weight 15, on every job.
+- In a **single-metro search**, `location` is very nearly the same: every job
+  worth seeing is in the one city and scores ~100. At weight 15 that is another
+  15 points on everything.
+- Together that was 22.5 free points on every local posting, which is how an IT
+  systems role nobody wanted cleared a report threshold of 75 on 45 points of
+  real fit. Keep the weight on a dimension proportional to how much it actually
+  varies across the jobs being compared — the README's Tuning section says this
+  to deployers.
+
+## `notes` is binding, not advisory
+
+It is the escape hatch for everything the fields cannot express, and it is
+appended to the prompt verbatim. The prompt now also tells the model that
+anything the candidate rules out is a hard exclusion scoring `industry_fit` at
+most 10, however transferable the skills. Transferability is a reason to
+consider a neighbouring role, not a reason to overrule somebody about their own
+career — and an agent that scores a job 80 because the skills carry over, when
+the person has said they do not want it, is wasting the one thing this is for.
+
 ## Deploying
 
 Deployment is **manual copy-paste** into the Apps Script editor, one editor file per

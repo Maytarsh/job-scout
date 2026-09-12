@@ -174,6 +174,10 @@ var PROFILE_KEYS = [
   { key: 'report_threshold', type: 'number', required: true },
   { key: 'apply_threshold', type: 'number', required: true },
   { key: 'max_posting_age_hours', type: 'number', required: true },
+  // Skip postings outside `locations` before they are ever scored. Defaults on
+  // — paying a model to confirm that Manila is not Tel Aviv is the single
+  // largest avoidable cost this system has.
+  { key: 'only_my_locations', type: 'bool', required: false },
   { key: 'email_report', type: 'bool', required: false },
   // Where the digest goes. A Profile row rather than Session.getActiveUser(),
   // which needs an OAuth scope this project deliberately does not ask for.
