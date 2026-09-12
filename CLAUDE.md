@@ -124,6 +124,18 @@ the subject.
   can end a run, it owes the digest too.
 - A failed run mails as well, and it ignores `email_report`: turning the digest off is
   turning off a convenience, not asking to stop being told the thing is broken.
+- **The recipient is a Profile row, never `Session.getActiveUser()`.** That call needs
+  the `userinfo.email` scope, which this does not request — and it failed on the first
+  real digest, after a run that had already found and scored everything correctly.
+  Asking for a deployer's identity to learn an address they could type is a scope for
+  nothing. `reportRecipient_` keeps the Session call as a try/catch fallback for anyone
+  who has that scope anyway.
+- **A digest that cannot be sent must not fail the run.** By the time it is attempted
+  the jobs are found, the scores written and the book flushed; throwing there reports
+  scoring as broken when it worked. `deliverDigest_` catches and writes `_Errors`
+  instead. The reverse — swallowing it silently — is worse, because the heartbeat is
+  the only channel for saying the heartbeat is broken. `setup()` therefore prints
+  whether a recipient can be resolved, which is the one moment someone is watching.
 
 ## Claude never sees raw HTML
 

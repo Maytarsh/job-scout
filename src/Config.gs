@@ -175,6 +175,9 @@ var PROFILE_KEYS = [
   { key: 'apply_threshold', type: 'number', required: true },
   { key: 'max_posting_age_hours', type: 'number', required: true },
   { key: 'email_report', type: 'bool', required: false },
+  // Where the digest goes. A Profile row rather than Session.getActiveUser(),
+  // which needs an OAuth scope this project deliberately does not ask for.
+  { key: 'report_email', type: 'text', required: false },
   { key: 'notes', type: 'text', required: false }
 ];
 

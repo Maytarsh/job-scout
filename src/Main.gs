@@ -84,15 +84,15 @@ function runDiscovery() {
     // the same empty inbox unless this fires.
     if (!submitted) {
       var quiet = rebuildReport_(book, profile);
-      sendDigest_(profile, quiet,
-                  'Nothing new to score this morning: ' + found.ok +
-                  ' source(s) answered, ' + found.failed + ' failed.');
+      deliverDigest_(book, profile, quiet,
+                     'Nothing new to score this morning: ' + found.ok +
+                     ' source(s) answered, ' + found.failed + ' failed.');
     }
     return { newJobs: newJobs, submitted: submitted };
 
   } catch (err) {
     try { flushBook_(book); } catch (flushErr) { Logger.log('flush failed: ' + flushErr); }
-    sendFailure_('discovery', err);
+    sendFailure_('discovery', err, '', profile);
     throw err;
   }
 }
@@ -220,12 +220,12 @@ function collectScores() {
     var nextChunk = submitPending_(book, profile);
     flushBook_(book);
 
-    sendDigest_(profile, matches, digestSummary_(outcome, nextChunk));
+    deliverDigest_(book, profile, matches, digestSummary_(outcome, nextChunk));
     return { scored: outcome.scored, matches: matches.length };
 
   } catch (err) {
     try { flushBook_(book); } catch (flushErr) { Logger.log('flush failed: ' + flushErr); }
-    sendFailure_('scoring', err, 'batch ' + batchId);
+    sendFailure_('scoring', err, 'batch ' + batchId, profile);
     throw err;
   }
 }
@@ -336,6 +336,26 @@ function abandonBatch_(book, batchId, status) {
   logRun_(book, { step: 'collect', batchId: batchId, note: 'abandoned as stale' });
   sendFailure_('scoring', new Error('batch ' + batchId + ' expired unfinished'),
                'the batch has been abandoned and its jobs requeued');
+}
+
+/**
+ * Send the digest, and do not let a mail problem fail a run that worked.
+ *
+ * The jobs are found, the scores are written and the book is flushed by the
+ * time this is called. An unsendable digest is worth a loud row in _Errors —
+ * it is the heartbeat, and a heartbeat nobody receives is the failure this
+ * design is most afraid of — but it is not worth throwing away a successful
+ * run's exit status and telling the deployer that scoring broke when it did
+ * not.
+ */
+function deliverDigest_(book, profile, matches, summary) {
+  try {
+    sendDigest_(profile, matches, summary);
+  } catch (mailErr) {
+    logError_(null, 'digest', String(mailErr.message || mailErr),
+              'The jobs were found and scored — only the email failed. Add a ' +
+              '"report_email" row to the Profile tab with your address.');
+  }
 }
 
 // ---------------------------------------------------------------- menu entries

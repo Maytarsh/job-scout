@@ -31,9 +31,18 @@ function setup() {
   var hasKey = !!PropertiesService.getScriptProperties()
     .getProperty('ANTHROPIC_API_KEY');
 
+  // Checked here because this is the one moment someone is looking at a screen
+  // waiting to be told whether it worked. The digest is the heartbeat, and the
+  // only channel for telling someone the heartbeat is broken is the heartbeat.
+  var recipient = '';
+  try { recipient = reportRecipient_(null, recipientHint_()); } catch (err) { }
+
   var message = [
     (hasKey ? '✓' : '✗') + ' Anthropic API key' +
       (hasKey ? '' : ' — add ANTHROPIC_API_KEY in Project Settings -> Script Properties'),
+    (recipient ? '✓ Reports go to ' + recipient
+               : '✗ No report_email on the Profile tab — the daily digest has ' +
+                 'nowhere to go'),
     '✓ Nine tabs ready',
     '✓ Triggers installed: discovery daily, collection hourly',
     '',
@@ -169,6 +178,9 @@ function sampleProfile_() {
     ['email_report', 'yes', 'Email the daily digest. It is sent even on ' +
       'zero-match days, which is how you know the whole thing is still ' +
       'running.'],
+    ['report_email', '', 'Where the digest goes. Type your own address — the ' +
+      'script is not allowed to look up who you are, and asking for that ' +
+      'permission to learn something you can type would be a poor trade.'],
     ['notes', 'SAMPLE: prefer remote-first employers; not interested in ' +
       'roles requiring more than 25% travel.',
       'Anything that does not fit a field above. Passed to the scorer word ' +

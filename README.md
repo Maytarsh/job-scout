@@ -116,7 +116,12 @@ You are agreeing to three things:
 |---|---|
 | See, edit... spreadsheets this application is installed in | It reads and writes this one spreadsheet, and no other. |
 | Connect to an external service | To reach the Anthropic API. |
-| Send email as you | The daily digest, sent to you. Nothing else, nobody else. |
+| Send email as you | The daily digest, sent to the address you put in `report_email`. Nothing else, nobody else. |
+
+The script is never told who you are. There is an OAuth scope for looking up the
+signed-in account's address, and this deliberately does not ask for it — you can
+type your address into the Profile tab in less time than it takes to read the
+permission prompt.
 
 When it finishes you will see a box confirming nine tabs and two triggers. Go back to
 the spreadsheet tab and reload the page — a **Job scout** menu appears next to *Help*.
@@ -155,6 +160,7 @@ Open the **Profile** tab. It arrives filled in with somebody else's answers, mar
 | `apply_threshold` | At or above this, it will draft a cover letter. |
 | `max_posting_age_hours` | Skip postings older than this. `72` sees almost nothing in week one; `336` or `720` is better if you are searching now. See [Cost](#cost). |
 | `email_report` | `yes` to get the daily email. Leave it on. |
+| `report_email` | **Your email address.** The digest has nowhere to go without it. |
 | `notes` | Anything that does not fit above. Written into the scoring instructions word for word. |
 
 **The five weights must add up to exactly 100.** They are how the score is built: a job
@@ -465,7 +471,13 @@ values in the file — it does not touch your Profile tab.
 
 ## When something goes wrong
 
-**No email at all.** The triggers stopped. In the Apps Script editor, click the clock
+**No email at all, but the Jobs tab is filling up.** The digest has nowhere to go.
+Add a `report_email` row to the Profile tab with your address, then re-run `setup()` —
+it prints where reports will be sent. The run itself is unaffected: jobs are found and
+scored before the email is attempted, and a failed send writes a row in \_Errors rather
+than failing the run.
+
+**No email at all, and nothing is happening either.** The triggers stopped. In the Apps Script editor, click the clock
 icon (**Triggers**) and check that `runDiscovery` and `collectScores` are both listed. If
 not, run **setup** again. It is safe to re-run: it never overwrites a tab you have filled
 in.

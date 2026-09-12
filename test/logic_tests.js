@@ -1224,6 +1224,79 @@ t('an unscored row is not reported as a zero', function () {
   eq(reportRows_(fakeBook(rows), { report_threshold: 0 }).length, 0, 'reported');
 });
 
+// ----------------------------------------------------------- who gets the mail
+
+t('the recipient comes from the Profile, not from an OAuth scope', function () {
+  // Session.getActiveUser() needs the userinfo.email scope, which this project
+  // does not request. It threw the first time a digest was actually sent -
+  // after a run that had already found and scored everything correctly.
+  eq(reportRecipient_({ report_email: 'someone@example.invalid' }),
+     'someone@example.invalid', 'from the profile');
+  eq(reportRecipient_({}, 'hint@example.invalid'), 'hint@example.invalid',
+     'from the raw cell when the profile did not validate');
+  eq(reportRecipient_({ report_email: 'a@example.invalid' }, 'b@example.invalid'),
+     'a@example.invalid', 'the profile wins over the hint');
+});
+
+t('no address anywhere is an error that says what to add', function () {
+  withGlobals({
+    Session: {
+      getActiveUser: function () {
+        throw new Error('Specified permissions are not sufficient to call ' +
+                        'Session.getActiveUser');
+      }
+    }
+  }, function () {
+    throws(function () { reportRecipient_({}, ''); }, 'report_email',
+           'no recipient');
+  });
+});
+
+t('the Session fallback still works for anyone who added the scope', function () {
+  withGlobals({
+    Session: {
+      getActiveUser: function () {
+        return { getEmail: function () { return 'scoped@example.invalid'; } };
+      }
+    }
+  }, function () {
+    eq(reportRecipient_({}, ''), 'scoped@example.invalid', 'fallback');
+  });
+});
+
+t('a digest that cannot be sent does not fail a run that worked', function () {
+  // Everything is found, scored and flushed before the digest goes out. An
+  // unsendable email is worth a loud row in _Errors; it is not worth telling
+  // someone that scoring broke when it did not.
+  var logged = [];
+  var threw = '';
+
+  withGlobals({
+    sendDigest_: function () { throw new Error('no report_email on the Profile tab'); },
+    logError_: function (book, where, what, todo) { logged.push([where, what, todo]); }
+  }, function () {
+    try { deliverDigest_(fakeBook([]), {}, [], 'summary'); }
+    catch (e) { threw = String(e.message || e); }
+  });
+
+  eq(threw, '', 'the run was failed by a mail problem');
+  eq(logged.length, 1, 'nothing was written to _Errors');
+  eq(logged[0][0], 'digest', 'error row subject');
+  ok(String(logged[0][2]).indexOf('report_email') !== -1,
+     'the error row does not say how to fix it: ' + logged[0][2]);
+});
+
+t('a digest that sends fine writes no error row', function () {
+  var logged = 0;
+  withGlobals({
+    sendDigest_: function () { return true; },
+    logError_: function () { logged++; }
+  }, function () {
+    deliverDigest_(fakeBook([]), {}, [], 'summary');
+  });
+  eq(logged, 0, 'a successful send still logged an error');
+});
+
 // -------------------------------------------------------------- spend ceiling
 
 t('no request leaves the script once the day is over budget', function () {

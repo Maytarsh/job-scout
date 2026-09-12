@@ -11,16 +11,53 @@
  * everything being fine.
  */
 
-/** Who the mail goes to: whoever owns the Sheet and authorised the script. */
-function reportRecipient_() {
-  var email = Session.getActiveUser().getEmail();
-  if (!email) {
-    // Time-driven triggers run as the person who installed them, so this is
-    // effectively unreachable in production. It is reachable in a shared
-    // Sheet opened by someone else, where sending anywhere would be wrong.
-    throw new Error('cannot determine the Sheet owner\'s email address');
+/**
+ * Who the mail goes to.
+ *
+ * A Profile row, not Session.getActiveUser(). That call needs the
+ * userinfo.email OAuth scope, which this project does not request and should
+ * not have to: asking for a deployer's identity in order to email them an
+ * address they could simply have typed is a scope for nothing. It also failed
+ * loudly the first time a digest was actually sent, which is the worst moment
+ * to discover a permission is missing.
+ *
+ * The Session call stays as a fallback for anyone who has added that scope for
+ * their own reasons, and because it costs one try/catch to keep working.
+ *
+ * hint is a raw report_email read straight off the Profile tab, used when
+ * validation failed and there is no profile object — a Sheet too broken to
+ * score is exactly when someone needs to be told.
+ */
+function reportRecipient_(profile, hint) {
+  var configured = String((profile || {}).report_email || '').trim();
+  if (configured) return configured;
+  if (hint) return String(hint).trim();
+
+  try {
+    var email = Session.getActiveUser().getEmail();
+    if (email) return email;
+  } catch (err) {
+    // The scope is absent, which is the expected case.
   }
-  return email;
+
+  throw new Error(
+    'no report_email on the Profile tab, so there is nowhere to send the ' +
+    'report. Add a row with the key "report_email" and your email address.');
+}
+
+/**
+ * The report_email cell, read without validating anything else.
+ *
+ * So a run that died on a bad Profile can still say so by email. Returns ''
+ * rather than throwing — this is called from failure paths, and a failure to
+ * report a failure is where this would go quiet.
+ */
+function recipientHint_() {
+  try {
+    return String(readKeyValues_(TABS.PROFILE, 1).report_email || '').trim();
+  } catch (err) {
+    return '';
+  }
 }
 
 function sheetUrl_() {
@@ -66,7 +103,7 @@ function sendDigest_(profile, matches, summary) {
   if (summary) lines.push(summary, '');
   lines.push('Full rows, including everything below the threshold: ' + sheetUrl_());
 
-  MailApp.sendEmail(reportRecipient_(), subject, lines.join('\n'));
+  MailApp.sendEmail(reportRecipient_(profile), subject, lines.join('\n'));
   Logger.log('sent the digest: ' + count + ' match(es)');
   return true;
 }
@@ -78,7 +115,7 @@ function sendDigest_(profile, matches, summary) {
  * off turned off a convenience; they did not ask to stop being told that the
  * thing is broken.
  */
-function sendFailure_(step, err, where) {
+function sendFailure_(step, err, where, profile) {
   var subject = 'job-scout: ' + step + ' failed';
   var lines = [
     'The ' + step + ' step stopped with an error.',
@@ -94,7 +131,10 @@ function sendFailure_(step, err, where) {
     'The _Errors tab has the detail: ' + sheetUrl_());
 
   try {
-    MailApp.sendEmail(reportRecipient_(), subject, lines.join('\n'));
+    // The hint matters most here: the commonest failure is a Profile that did
+    // not validate, so there is no profile object to read the address from.
+    MailApp.sendEmail(reportRecipient_(profile, recipientHint_()), subject,
+                      lines.join('\n'));
   } catch (mailErr) {
     // A failure to report a failure is where this would go quiet, so it at
     // least reaches the execution log.
