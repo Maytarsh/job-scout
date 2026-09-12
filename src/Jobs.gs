@@ -54,16 +54,42 @@ function normalizeTitle_(title) {
  * "Portland, OR" and "Portland, Oregon" agree.
  */
 function normalizeLocation_(location) {
-  var text = basicNormalize_(location)
-    .replace(/\bunited states of america\b/g, 'us')
-    .replace(/\bunited states\b/g, 'us')
-    .replace(/\busa\b/g, 'us')
-    // Expanded from the shared table rather than from a handful of states
-    // written out here: whoever runs this is looking somewhere, and the three
-    // states the sample profile happens to name are not necessarily theirs.
-    .replace(/\b([a-z]{2})\b/g, function (whole, abbreviation) {
-      return US_STATES[abbreviation] || whole;
-    });
+  var text = basicNormalize_(location);
+
+  // "IL" is Israel on one board and Illinois on another, and the two-letter
+  // state table would silently turn every Tel Aviv job into an Illinois one.
+  // Decide from the city standing next to it rather than from a guess.
+  if (/\bil\b/.test(text) && hasIsraeliCity_(text)) {
+    text = text.replace(/\bil\b/g, 'israel');
+  }
+
+  // Phrase aliases before the two-letter expansion, because they are longer
+  // and expanding a state code first would break them apart.
+  for (var i = 0; i < LOCATION_ALIASES.length; i++) {
+    var from = LOCATION_ALIASES[i][0];
+    if (text.indexOf(from) !== -1) {
+      text = text.split(from).join(LOCATION_ALIASES[i][1]);
+    }
+  }
+
+  // The country is dropped, not canonicalised. A board writes one job as
+  // "Tel Aviv", the next writes it as "Tel Aviv, Israel", and keeping the
+  // country would leave those as two jobs. What distinguishes places within
+  // one search is the city, and a search that spans countries still has the
+  // company and the title doing the work.
+  text = text
+    .replace(/\bunited states of america\b/g, ' ')
+    .replace(/\bunited states\b/g, ' ')
+    .replace(/\b(usa|us|israel)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Expanded from the shared table rather than from a handful of states
+  // written out here: whoever runs this is looking somewhere, and the states
+  // the sample profile happens to name are not necessarily theirs.
+  text = text.replace(/\b([a-z]{2})\b/g, function (whole, abbreviation) {
+    return US_STATES[abbreviation] || whole;
+  }).replace(/\s+/g, ' ').trim();
 
   if (/\bremote\b/.test(text)) {
     var rest = text.replace(/\b(remote|hybrid|onsite|on site)\b/g, ' ')
@@ -71,6 +97,14 @@ function normalizeLocation_(location) {
     return rest ? 'remote ' + rest : 'remote';
   }
   return text;
+}
+
+/** Does this location name an Israeli city? Decides what a bare "IL" means. */
+function hasIsraeliCity_(text) {
+  for (var i = 0; i < IL_CITIES.length; i++) {
+    if (text.indexOf(IL_CITIES[i]) !== -1) return true;
+  }
+  return false;
 }
 
 /** Lower-case, unpunctuate, collapse. The shared first half of all three. */

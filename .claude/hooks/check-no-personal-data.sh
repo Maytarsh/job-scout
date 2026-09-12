@@ -21,10 +21,14 @@ base=$(basename "$file")
 # Setup.gs is where the sample Profile and Sources rows live, by design.
 [ "$base" = "Setup.gs" ] && exit 0
 
-# US_STATES in Config.gs is a general lookup table, not somebody's locations.
-# Blanked rather than deleted so the reported line numbers still point at the
-# real lines.
-hits=$(sed '/^var US_STATES = {/,/^};/s/.*//' "$file" | grep -nEi \
+# US_STATES, IL_CITIES and LOCATION_ALIASES in Config.gs are general lookup
+# tables, not somebody's locations: they exist so that two spellings of one
+# place collapse to one dedupe key, for whoever is running this and wherever
+# they are looking. Each is named in CLAUDE.md as reference data. Blanked
+# rather than deleted so the reported line numbers still point at real lines.
+hits=$(sed -e '/^var US_STATES = {/,/^};/s/.*//' \
+           -e '/^var IL_CITIES = \[/,/^\];/s/.*//' \
+           -e '/^var LOCATION_ALIASES = \[/,/^\];/s/.*//' "$file" | grep -nEi \
   'los angeles|manhattan beach|malibu|orange county|austin|new york|san diego|h-1b|real estate (development|acquisitions)' \
   | grep -viE '^\s*[0-9]+:\s*(//|\*)' | head -10)
 

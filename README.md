@@ -22,6 +22,7 @@ It never submits an application. That is on purpose, and it is explained under
 - [Setup](#setup)
 - [Filling in your Profile](#filling-in-your-profile)
 - [Choosing your sources](#choosing-your-sources)
+- [Which country you are searching](#which-country-you-are-searching)
 - [The first run](#the-first-run)
 - [Reading the report](#reading-the-report)
 - [NEEDS INPUT and BLOCKED](#needs-input-and-blocked)
@@ -139,7 +140,8 @@ Open the **Profile** tab. It arrives filled in with somebody else's answers, mar
 
 | Row | What to put |
 |---|---|
-| `resume_text` | Your whole resume, pasted in as plain text. |
+| `region` | `IL` or `US`. Only the aggregator sources need it. |
+| `resume_text` | Your whole resume, pasted in as plain text — see the note below. |
 | `resume_file_id` | *Or* the id of a PDF in your Drive — see below. Fill in one of these two, not both. |
 | `locations` | Where you would work, comma-separated. Remote counts as a match for any of them. |
 | `target_roles` | The jobs you want, comma-separated. Related roles still score, just lower. |
@@ -150,7 +152,7 @@ Open the **Profile** tab. It arrives filled in with somebody else's answers, mar
 | `weight_interview_odds` | How much your chance of getting an interview matters. |
 | `report_threshold` | Below this score, a job is recorded but not shown to you. |
 | `apply_threshold` | At or above this, it will draft a cover letter. |
-| `max_posting_age_hours` | Skip postings older than this. |
+| `max_posting_age_hours` | Skip postings older than this. `72` sees almost nothing in week one; `336` or `720` is better if you are searching now. See [Cost](#cost). |
 | `email_report` | `yes` to get the daily email. Leave it on. |
 | `notes` | Anything that does not fit above. Written into the scoring instructions word for word. |
 
@@ -165,6 +167,15 @@ that mean something you did not choose.
 would say it: *"prefer remote-first employers", "not interested in anything requiring
 more than 25% travel", "would take a pay cut for the right development role"*.
 
+> **Pasting a resume into a cell without it turning into `#ERROR!`.** A resume is
+> many lines, and pasting many lines into a spreadsheet puts each one in its own
+> **row** — so `resume_text` ends up holding only your name, and every line that
+> starts with `-` or `+` (your bullets, your phone number) is read as a formula
+> and shows `#ERROR!`. Get the whole thing into **one cell** and neither happens:
+> click the cell, click into the **formula bar** at the top, and paste there.
+> Alternatively, replace the line breaks with " · " in a text editor first and
+> paste that single line straight into the cell.
+
 > **Finding a Drive file id:** open the PDF in Google Drive, click **Share → Copy link**,
 > and paste it somewhere. The link looks like
 > `https://drive.google.com/file/d/1AbC...XyZ/view`. The id is the part between `/d/` and
@@ -177,40 +188,67 @@ every morning. If you update your resume, use **Job scout → Re-read the resume
 
 ## Choosing your sources
 
-Open the **Sources** tab. Each row is one place to look. It ships with twenty sample
-employers — real estate, proptech and fintech — so you can see the shape and so the first
-run returns something real. Replace them with companies you would actually work for.
+Open the **Sources** tab. Each row is one place to look, and there are two kinds
+of row that do different jobs.
 
-Board names go stale as companies switch systems, so run **Job scout → Check sources**
-before you rely on them. A dead row costs you nothing else: it writes a note in the
-\_Errors tab and every other source still runs.
+### Company boards — depth
 
 | Type | Put in "Slug or URL" | Where to find it |
 |---|---|---|
-| `ats_greenhouse` | The company's board name | Their careers link looks like `job-boards.greenhouse.io/acmecorp` → use `acmecorp` |
-| `ats_lever` | The company's board name | `jobs.lever.co/acmecorp` → use `acmecorp` |
-| `ats_ashby` | The company's board name | `jobs.ashbyhq.com/acmecorp` → use `acmecorp` |
-| `careers_url` | The full web address of one job posting | Copy it from your address bar |
-| `aggregator` | `search terms@location` | Optional — see below |
+| `ats_greenhouse` | the board name | `job-boards.greenhouse.io/acmecorp` → `acmecorp` |
+| `ats_lever` | the board name | `jobs.lever.co/acmecorp` → `acmecorp` |
+| `ats_ashby` | the board name | `jobs.ashbyhq.com/acmecorp` → `acmecorp` |
+| `ats_comeet` | `uid/token` | both appear in the careers page source |
+| `careers_url` | the full address of one posting | copy it from your address bar |
 
-Set **Enabled** to `yes` or `no` to turn a row on or off without deleting it.
+These give you the **full posting**, a real salary when there is one, and a link
+that applies **directly to the employer**. The limit is obvious: you only see
+companies you listed.
 
-The practical way to build this list: think of fifteen or twenty employers you would
-genuinely want to work for, open each one's careers page, and look at the address bar.
-If it says greenhouse, lever or ashby, you have your type and slug in one glance.
+The practical way to build the list is to think of fifteen or twenty employers
+you would genuinely want to work for, open each careers page, and look at the
+address bar — it usually names the ATS outright.
 
-Then run **Job scout → Check sources**. It tries every enabled row and tells you which
-ones answered and how many jobs each returned. A row that fails costs you nothing else —
-every other source still runs — but it is worth fixing before the first real morning.
+### Open search — reach
 
-> **The optional aggregator.** ATS boards only find jobs at companies you have listed. If
-> you also want keyword search across employers you have not thought of, sign up for a
-> free [Adzuna developer key](https://developer.adzuna.com), then add two more script
-> properties (Project Settings → Script Properties): `ADZUNA_APP_ID` and
-> `ADZUNA_APP_KEY`. Set the sample aggregator row's Enabled to `yes`. This is entirely
-> optional — without it everything else works exactly as it should.
+| Type | Put in "Slug or URL" |
+|---|---|
+| `aggregator_careerjet` | `search terms@location` |
+| `aggregator_adzuna` | `search terms@location` |
 
----
+One row searches **every employer the aggregator indexes**, including ones you
+have never heard of. This is what stops the whole thing being a fixed list.
+
+The trade is real and worth knowing: an aggregator returns a **search-result
+snippet** (~70 tokens, often cut mid-sentence) rather than a job description,
+rarely states a salary, and links through a redirect rather than to the
+employer. The scorer has much less to work with. Use both kinds of row —
+aggregators for coverage, company boards for the employers you care about.
+
+To use one you need a free key in **Project Settings → Script Properties**:
+
+- **Careerjet** — register at `careerjet.com/partners/api/`, then add
+  `CAREERJET_AFFID`. Covers both Israel and the US.
+- **Adzuna** — register at `developer.adzuna.com`, then add `ADZUNA_APP_ID` and
+  `ADZUNA_APP_KEY`. **Adzuna does not index Israel**; the row will tell you so
+  rather than quietly searching somewhere else.
+
+### Which country you are searching
+
+Set the **`region`** row on the Profile tab to `IL` or `US`. That one row is
+what makes this Sheet yours rather than someone else's, and it is all the
+aggregators need — the company-board rows never look at it.
+
+Searching both countries at once? Put the region on the row itself as a third
+segment: `python infrastructure@Tel Aviv@IL` and `analyst@Austin@US` can sit in
+the same tab.
+
+Set **Enabled** to `yes` or `no` to turn any row on or off without deleting it.
+
+Then run **Job scout → Check sources**. It tries every enabled row and reports
+how many jobs each returned. Board names go stale as companies switch systems,
+so do this before you rely on the list. A dead row costs you nothing else: it
+writes a note in the \_Errors tab and every other source still runs.
 
 ## The first run
 
@@ -224,12 +262,11 @@ you do not have to.
 To watch it happen, click **Job scout → Collect scores now**. If it says the batch is not
 finished yet, that is normal; wait and try again, or just leave it alone.
 
-**Your first run will find far more jobs than a normal morning.** A typical day brings in
-a handful of new postings; the first run sees *every* open role at *every* company you
-listed, which can easily be several hundred. It scores them fifty at a time and picks up
-where it left off each hour, so the first day's scoring finishes over a few hours rather
-than all at once. That is by design — it keeps a single run from timing out and keeps the
-first day's cost from being a surprise. After that, each morning is small.
+**Your first run is the only big one.** It has no history to dedupe against, so it
+picks up every posting inside your `max_posting_age_hours` window at once — at `720`
+that is a few hundred jobs and about $0.62, once. It scores them fifty at a time and
+carries on each hour, so the first day finishes over a few hours rather than all at
+once. Every morning after that is a handful of genuinely new postings, about a cent.
 
 From then on it runs on its own: discovery once a day at 6am, collection every hour.
 
@@ -311,26 +348,42 @@ default. That is the point of it.
 
 ## Cost
 
-Roughly **$2 to $4 a month** for a typical search.
+**Well under a dollar a month for a typical search**, plus a one-off for the
+first run. These are measured against real job boards, not estimated.
 
 | What | How often | Cost |
 |---|---|---|
-| Reading your resume | Once ever | about $0.10 |
-| Scoring jobs | ~40 a day | about $2 a month |
-| Drafting cover letters | Only for 85+ matches | about $0.05 each |
+| Reading your resume | Once, ever | ~$0.10 |
+| Scoring one job | per new posting | **$0.0016** |
+| Drafting a cover letter | only for 85+ matches you choose to run | ~$0.05 |
 
-Scoring is the bulk of it and it is kept cheap deliberately: a fast, inexpensive model, a
-half-price processing queue, and — the part that matters most — the job description is
-stripped of all web-page clutter and capped in size before it is sent. Sending raw web
-pages instead would cost more than fifty times as much.
+What makes it cheap is not the model, it is how few jobs are ever sent. Every
+ATS board here states a real posting date, so `max_posting_age_hours` filters
+most of a board out **before anything reaches the API**, and dedupe means a job
+is scored exactly once no matter how many mornings it stays open. Across twenty
+boards holding ~1,300 open roles, a normal day brings roughly **five to ten new
+postings** — about **a cent a day**.
 
-Your first month runs a little higher because of the first-run backlog.
+The one-off is your first run, which has no history to dedupe against:
 
-There is a hard daily ceiling of **$2.00**. Once a day's spending reaches it, nothing
-further is sent until midnight UTC, whatever happens. To change it, edit
-`DAILY_BUDGET_USD` at the top of `Config.gs` and re-paste that file.
+| `max_posting_age_hours` | Jobs scored on first run | Costs once |
+|---|---|---|
+| 72 (3 days) | ~60 | $0.09 |
+| 168 (1 week) | ~95 | $0.15 |
+| 336 (2 weeks) | ~215 | $0.34 |
+| 720 (1 month) | ~390 | $0.62 |
 
----
+Widening the window only ever costs you once — it buys the backlog of roles
+already open, then dedupe takes over. If you are actively searching, 336 or 720
+is the better setting; 72 will show you almost nothing in the first week.
+
+Aggregator rows are cheaper per job (a snippet is ~70 tokens against ~1,200 for
+a full posting) but return far more of them, so they raise the first run more
+than the daily cost.
+
+There is a hard ceiling of **$2.00 a day**. Once a day's spending reaches it
+nothing further is sent until midnight UTC, whatever happens. Change it with
+`DAILY_BUDGET_USD` at the top of `Config.gs`.
 
 ## Tuning
 

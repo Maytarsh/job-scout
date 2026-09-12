@@ -151,6 +151,9 @@ var UNESTABLISHED = 'UNESTABLISHED';
 var PROFILE_KEYS = [
   { key: 'resume_text', type: 'text', required: false },
   { key: 'resume_file_id', type: 'text', required: false },
+  // Only the aggregator adapters need it, so it is not required — a Sheet
+  // using ats_* rows alone never has to say where in the world it is.
+  { key: 'region', type: 'text', required: false },
   { key: 'locations', type: 'list', required: true },
   { key: 'target_roles', type: 'list', required: true },
   { key: 'weight_industry_fit', type: 'number', required: true },
@@ -223,10 +226,53 @@ var ANSWER_KEYS = [
 /**
  * Source types the dispatcher knows. Adding one means adding an adapter in
  * Sources.gs and a line here — never a change to the pipeline that consumes them.
+ *
+ * The two families answer different questions. An ats_* row asks "what is open
+ * at this company", and answers it first-hand: the full posting, a real salary
+ * when there is one, and a link that applies directly to the employer. An
+ * aggregator_* row asks "who is hiring for this, anywhere", and answers it
+ * across companies nobody listed — but with a search-result snippet rather than
+ * a description, rarely a salary, and a link through the aggregator.
+ *
+ * Neither replaces the other and the pipeline cannot tell them apart. Reach
+ * comes from the aggregator rows; depth comes from the ats rows.
  */
 var SOURCE_TYPES = [
-  'ats_greenhouse', 'ats_lever', 'ats_ashby', 'aggregator', 'careers_url'
+  'ats_greenhouse', 'ats_lever', 'ats_ashby', 'ats_comeet',
+  'aggregator_careerjet', 'aggregator_adzuna', 'careers_url'
 ];
+
+/**
+ * Where a person is looking, and what each aggregator calls that place.
+ *
+ * Region lives here rather than in any adapter because it is the one thing that
+ * has to change when this is handed to someone in a different country, and it
+ * must be changeable without touching code. An aggregator a region has no entry
+ * for is unavailable there, and says so rather than quietly searching the wrong
+ * country — Adzuna publishes no Israeli index at all, and asking it for one
+ * returns a US-shaped error page that would otherwise parse as "no jobs today".
+ *
+ * Adding a country means adding a row here and nothing else.
+ */
+var REGIONS = {
+  IL: {
+    label: 'Israel',
+    careerjet_locale: 'en_IL',
+    adzuna_country: ''
+  },
+  US: {
+    label: 'United States',
+    careerjet_locale: 'en_US',
+    adzuna_country: 'us'
+  }
+};
+
+// Careerjet's public API. pagesize caps at 50 — asking for 100 silently returns
+// 20 — and sort=date puts the newest first, which is what makes one page enough:
+// anything older than the freshness window would be filtered out anyway, and
+// anything newer arrives tomorrow instead.
+var CAREERJET_URL = 'http://public.api.careerjet.net/search';
+var CAREERJET_PAGE_SIZE = 50;
 
 /**
  * State abbreviation to state name. Person-agnostic reference data, not
@@ -251,6 +297,52 @@ var US_STATES = {
   ut: 'utah', vt: 'vermont', va: 'virginia', wa: 'washington',
   wv: 'west virginia', wi: 'wisconsin', wy: 'wyoming', dc: 'washington dc'
 };
+
+/**
+ * Place names that mean the same place, written the way boards write them.
+ *
+ * Person-agnostic reference data, like US_STATES, and applied everywhere
+ * regardless of which region anyone is searching: expanding "tlv" and "ca" in
+ * the same pass costs nothing and collapses a duplicate either way. Two boards
+ * carrying one job as "Tel Aviv-Yafo" and "Tel Aviv" would otherwise produce two
+ * rows, two scores and two lines in the morning report.
+ *
+ * Longest first — "tel aviv yafo" has to match before "tel aviv" does.
+ *
+ * The tooling that keeps person-specific values out of src/ knows this block by
+ * name; see .claude/hooks/check-no-personal-data.sh.
+ */
+var IL_CITIES = [
+  'tel aviv', 'jerusalem', 'haifa', 'herzliya', 'raanana', 'petah tikva',
+  'netanya', 'rehovot', 'kfar saba', 'ramat gan', 'givatayim', 'holon',
+  'rishon lezion', 'beersheba', 'yokneam', 'caesarea', 'modiin', 'ashdod',
+  'kiryat gat', 'airport city', 'hod hasharon', 'bnei brak', 'rosh haayin',
+  'or yehuda', 'ness ziona', 'yehud', 'tirat carmel', 'migdal haemek'
+];
+
+var LOCATION_ALIASES = [
+  ['tel aviv yafo', 'tel aviv'],
+  ['tel aviv jaffa', 'tel aviv'],
+  ['tel aviv district', 'tel aviv'],
+  ['ramat hahayal', 'tel aviv'],
+  ['tlv', 'tel aviv'],
+  ['petach tikva', 'petah tikva'],
+  ['petah tiqwa', 'petah tikva'],
+  ['ra anana', 'raanana'],
+  ['herzlia', 'herzliya'],
+  ['herzliya pituach', 'herzliya'],
+  ['kfar sava', 'kfar saba'],
+  ['be er sheva', 'beersheba'],
+  ['beer sheva', 'beersheba'],
+  ['rishon lezion', 'rishon lezion'],
+  ['rishon le zion', 'rishon lezion'],
+  ['yokneam illit', 'yokneam'],
+  ['nyc', 'new york'],
+  ['new york city', 'new york'],
+  ['sf bay area', 'san francisco'],
+  ['san francisco bay area', 'san francisco'],
+  ['greater los angeles', 'los angeles']
+];
 
 // Company-name suffixes that carry no identity, stripped when building the
 // dedupe key. "Marlow Ridge" and "Marlow Ridge, Inc." are one employer.

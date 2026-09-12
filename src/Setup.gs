@@ -138,6 +138,8 @@ function sampleProfile_() {
     ['resume_file_id', '',
       'Alternative to resume_text: the id of a PDF in your Drive — the long ' +
       'string in its URL. Needs the Drive scope added; see the README.'],
+    ['region', 'US', 'Which country you are searching: IL or US. Only the ' +
+      'aggregator sources need it; leave blank if you use company boards only.'],
     ['locations', 'SAMPLE: Los Angeles area, Manhattan Beach, Malibu, ' +
       'Orange County CA, Austin TX, New York City',
       'Where you would work. Comma-separated. Remote counts as a match for ' +
@@ -222,8 +224,13 @@ function sampleSources_() {
     return [row[0], row[1], row[2], 'yes'];
   });
 
-  rows.push(['aggregator', 'real estate analyst@Los Angeles',
-             'SAMPLE (optional): Adzuna keyword search — "terms@location"', 'no']);
+  // Both disabled, both keyless, and one of each region — the aggregator rows
+  // are what make the search open-ended rather than a fixed list of employers,
+  // and the third segment is how one Sheet searches two countries at once.
+  rows.push(['aggregator_careerjet', 'real estate analyst@Los Angeles',
+             'SAMPLE (optional): open search — "terms@location"', 'no']);
+  rows.push(['aggregator_careerjet', 'python infrastructure@Tel Aviv@IL',
+             'SAMPLE (optional): open search overriding the region', 'no']);
   return rows;
 }
 
@@ -274,11 +281,12 @@ function menuDraftApplications() {
  */
 function menuCheckSources() {
   var sources = readSources_();
+  var profile = readProfile_();
   var lines = [];
 
   for (var i = 0; i < sources.length; i++) {
     try {
-      var jobs = fetchSource_(sources[i]);
+      var jobs = fetchSource_(sources[i], profile);
       lines.push('OK    ' + sources[i].label + ' — ' + jobs.length + ' job(s)');
     } catch (err) {
       lines.push('FAIL  ' + sources[i].label + ' — ' + String(err.message || err));

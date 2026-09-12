@@ -47,7 +47,7 @@ function runDiscovery() {
   }
 
   try {
-    var found = fetchAllSources_(book);
+    var found = fetchAllSources_(book, profile);
     var newJobs = 0;
     var skippedStale = 0;
     var now = new Date();
@@ -103,10 +103,17 @@ function runDiscovery() {
  * Submit the next chunk of the unscored queue. Returns the number submitted.
  *
  * Shared by both triggers, so a backlog drains at the hourly poll rather than
- * one chunk per day. That matters most on the first run of a fresh Sheet: most
- * ATS boards state no posting date, unknown ages are never filtered, and so
- * the first pass sees every open role at every configured company — several
- * hundred, not a morning's worth.
+ * one chunk per day.
+ *
+ * The cap was added on the belief that most ATS boards state no posting date,
+ * so the first run of a fresh Sheet would score every open role at every
+ * company. Measured, that turned out false: Greenhouse, Lever and Ashby all
+ * date every posting, so the freshness filter removes most of them before
+ * anything is sent. The cap stays because the cases it does cover are real —
+ * careers_url rows genuinely have no date, an aggregator row can return fifty
+ * at once, and a widened max_posting_age_hours backfills months — and because
+ * a bound on what one run can spend is worth having whether or not today is
+ * the day it binds.
  */
 function submitPending_(book, profile) {
   var props = PropertiesService.getScriptProperties();

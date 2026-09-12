@@ -93,6 +93,19 @@ function validateProfile_(raw) {
       'report. Set report_threshold at or below apply_threshold.');
   }
 
+  // Optional, because a Sheet using only ats_ rows never needs one. Wrong is
+  // a different thing from absent: a typo here would otherwise surface as
+  // every aggregator row failing with an unrecognised-region message.
+  if (profile.region) {
+    profile.region = String(profile.region).trim().toUpperCase();
+    if (!REGIONS[profile.region]) {
+      throw new Error(
+        'The Profile row "region" is "' + profile.region + '", which is not a ' +
+        'region this knows. Use one of: ' + Object.keys(REGIONS).join(', ') +
+        '. Leave it blank if you are not using an aggregator source.');
+    }
+  }
+
   if (profile.max_posting_age_hours <= 0) {
     throw new Error('max_posting_age_hours must be a positive number of hours.');
   }

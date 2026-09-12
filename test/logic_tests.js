@@ -213,6 +213,107 @@ t('a custom_id is 32 characters and stable for a key', function () {
   ok(jobCustomId_(key + 'x') !== id, 'two keys produced one id');
 });
 
+// ------------------------------------------------------- regions and places
+
+t('an Israeli city collapses however a board spells it', function () {
+  var want = normalizeLocation_('Tel Aviv');
+  eq(normalizeLocation_('Tel Aviv-Yafo'), want, 'Yafo');
+  eq(normalizeLocation_('Tel Aviv, Israel'), want, 'with the country');
+  eq(normalizeLocation_('TLV'), want, 'airport code');
+  eq(normalizeLocation_('Tel Aviv District'), want, 'district');
+  eq(normalizeLocation_('Herzliya Pituach'), normalizeLocation_('Herzlia'), 'Herzliya');
+  eq(normalizeLocation_('Petach Tikva'), normalizeLocation_('Petah Tikva'), 'Petah Tikva');
+});
+
+t('"IL" is Israel next to an Israeli city and Illinois next to an American one', function () {
+  // The two-letter table would otherwise file every Tel Aviv job in Illinois,
+  // silently, and the report would read as though the search had gone abroad.
+  eq(normalizeLocation_('Tel Aviv, IL'), normalizeLocation_('Tel Aviv'), 'Israel');
+  eq(normalizeLocation_('Chicago, IL'), normalizeLocation_('Chicago, Illinois'),
+     'Illinois');
+  ok(normalizeLocation_('Chicago, IL').indexOf('illinois') !== -1,
+     'Chicago stopped being in Illinois');
+});
+
+t('the country is dropped so one job is one job', function () {
+  eq(normalizeLocation_('New York, NY, US'), normalizeLocation_('New York, New York'),
+     'US suffix');
+  eq(normalizeLocation_('Haifa, Israel'), normalizeLocation_('Haifa'), 'Israel suffix');
+});
+
+t('a region must be one this knows, and may be left out', function () {
+  var raw = validProfileRaw();
+  eq(validateProfile_(raw).region, '', 'absent is allowed');
+
+  raw.region = 'il';
+  eq(validateProfile_(raw).region, 'IL', 'case is normalised');
+
+  raw.region = 'Atlantis';
+  throws(function () { validateProfile_(raw); }, 'not a region', 'unknown region');
+});
+
+t('an aggregator row reads its terms, location and region', function () {
+  var profile = { region: 'IL' };
+  var q = aggregatorQuery_('python infrastructure@Tel Aviv', profile);
+  eq(q.what, 'python infrastructure', 'terms');
+  eq(q.where, 'Tel Aviv', 'location');
+  eq(q.region.careerjet_locale, 'en_IL', 'locale from the profile');
+
+  // The third segment is how one Sheet searches two countries at once.
+  var override = aggregatorQuery_('analyst@Austin@US', profile);
+  eq(override.region.careerjet_locale, 'en_US', 'row overrides the profile');
+
+  eq(aggregatorQuery_('python', profile).where, '', 'location is optional');
+});
+
+t('an aggregator row without a region says so instead of guessing one', function () {
+  throws(function () { aggregatorQuery_('python@Tel Aviv', {}); },
+         'needs a region', 'no region anywhere');
+  throws(function () { aggregatorQuery_('@Tel Aviv', { region: 'IL' }); },
+         'needs search terms', 'no terms');
+  throws(function () { aggregatorQuery_('python@x@Atlantis', {}); },
+         'unknown region', 'bad override');
+});
+
+t('Adzuna refuses Israel rather than searching the wrong country', function () {
+  // It publishes no Israeli index, and the request returns a US-shaped error
+  // page - which would parse as an empty result and read as a quiet morning.
+  throws(function () { fetchAdzuna_('python@Tel Aviv', { region: 'IL' }); },
+         'does not cover Israel', 'IL');
+  eq(REGIONS.US.adzuna_country, 'us', 'and still covers the US');
+});
+
+t('every region entry answers for every aggregator', function () {
+  Object.keys(REGIONS).forEach(function (code) {
+    var region = REGIONS[code];
+    ok(region.label, code + ' has no label');
+    ok(typeof region.careerjet_locale === 'string' && region.careerjet_locale,
+       code + ' has no Careerjet locale');
+    ok(typeof region.adzuna_country === 'string',
+       code + ' does not say whether Adzuna covers it');
+  });
+});
+
+t('a Comeet row needs both halves of its reference', function () {
+  throws(function () { fetchComeet_('justauid'); }, 'uid/token', 'no token');
+  throws(function () { fetchComeet_(''); }, 'uid/token', 'empty');
+});
+
+t('every source type in the config has an adapter behind it', function () {
+  // The dispatcher is the one place that knows the list. A type added to the
+  // config and forgotten here fails at 6am on a row someone thought was live.
+  for (var i = 0; i < SOURCE_TYPES.length; i++) {
+    var threw = '';
+    try {
+      fetchSource_({ type: SOURCE_TYPES[i], ref: '', label: 'x' }, {});
+    } catch (e) {
+      threw = String(e.message || e);
+    }
+    ok(threw.indexOf('unknown source type') === -1,
+       SOURCE_TYPES[i] + ' has no case in fetchSource_');
+  }
+});
+
 // ------------------------------------------------------------------ freshness
 
 t('an age is hours behind now, never negative', function () {

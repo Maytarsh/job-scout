@@ -167,6 +167,44 @@ robots.txt. An employer's own ATS is the same posting first-hand, with a real AP
 - A source that fails writes an `_Errors` row with something the deployer can act on, and
   the run continues. One dead careers page must not cost the morning report.
 
+## Region belongs in the Sheet, not in an adapter
+
+This is the person-agnostic rule in its most concrete form. The project was
+written from a US-shaped spec and it showed: the aggregator had `us` hardcoded in
+its URL, and `normalizeLocation_` expanded three state codes that happened to be
+the sample profile's states.
+
+- `REGIONS` in `Config.gs` is the whole of it. Adding a country means adding a row
+  there and nothing else. An aggregator a region has no entry for is unavailable
+  there and **says so** — Adzuna publishes no Israeli index, and asking for one
+  returns a US-shaped error page that would otherwise parse as "no jobs today".
+- `region` on the Profile is optional, because a Sheet using only `ats_*` rows
+  never needs one. An aggregator row without one fails with a sentence naming the
+  fix, rather than defaulting to a country.
+- **`IL` is Israel next to an Israeli city and Illinois next to an American one.**
+  `normalizeLocation_` decides from the city beside it. Without that check every
+  Tel Aviv job files itself under Illinois, silently, and dedupe splits in two.
+- Location aliases and `US_STATES` are applied to every location regardless of
+  region. Expanding `tlv` and `ca` in the same pass costs nothing and collapses a
+  duplicate either way.
+
+## Two source families, and one of them is unverified
+
+`ats_*` rows answer "what is open at this company" first-hand: full posting, real
+salary, direct apply link. `aggregator_*` rows answer "who is hiring for this,
+anywhere" across companies nobody listed — but with a ~70-token search snippet,
+rarely a salary, and a redirect link. Neither replaces the other, and nothing
+downstream can tell them apart.
+
+`fetchComeet_` is the exception to this repo's rule about verifying before
+shipping. Its endpoint is confirmed (it answers "Token is missing" without one)
+but **its response shape has never been read from a live board** — ten Israeli
+careers pages were searched for a Comeet embed and none had one, and the vendor
+has since rebranded to Spark Hire Recruit. It therefore throws on the first
+position with no name, quoting what it actually received, rather than returning
+rows with blank titles and a dedupe key of `||`. Get a real `uid/token`, run it,
+and either confirm the fields or fix them — then delete this paragraph.
+
 ## Deploying
 
 Deployment is **manual copy-paste** into the Apps Script editor, one editor file per
