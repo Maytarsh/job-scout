@@ -638,6 +638,195 @@ function pathOf_(url) {
   return (match && match[1]) || '/';
 }
 
+// ------------------------------------------------------------------ discovery
+
+/**
+ * Turn company names into Sources rows, so nobody has to know what an ATS is.
+ *
+ * The Sources tab is a list, and a list somebody maintains by hand is the thing
+ * this was fairly accused of being. This does not remove the list — it removes
+ * the maintenance. You write down companies you would work for; this works out
+ * which board each one uses, checks the board is real, and appends the row.
+ *
+ * The location check is what makes it trustworthy. A slug guessed from a name
+ * collides constantly: probing "Next Insurance" finds a live Greenhouse board
+ * at "insurance", and "Moon Active" finds one at "moon" — both real boards,
+ * neither the right company. Requiring at least one job in the deployer's own
+ * locations threw out every such collision when this was built, without anyone
+ * having to recognise the names.
+ *
+ * Returns a summary for the toast.
+ */
+function discoverBoards_(profile) {
+  var sheet = getSheet_(TABS.DISCOVER);
+  var last = sheet.getLastRow();
+  if (last < 2) return { checked: 0, added: 0, empty: true };
+
+  var rows = sheet.getRange(2, 1, last - 1, DISCOVER_HEADERS.length).getValues();
+  var pending = [];
+  for (var i = 0; i < rows.length && pending.length < CONFIG.MAX_DISCOVER_PER_RUN; i++) {
+    var name = String(rows[i][D_NAME] || '').trim();
+    if (name && !String(rows[i][D_RESULT] || '').trim()) {
+      pending.push({ row: i, name: name, slug: boardSlug_(name) });
+    }
+  }
+  if (!pending.length) return { checked: 0, added: 0, done: true };
+
+  var results = probeBoards_(pending);
+  var existing = existingSourceKeys_();
+  var additions = [];
+
+  for (var j = 0; j < pending.length; j++) {
+    var item = pending[j];
+    var found = results[item.slug] || [];
+    var matched = [];
+    var seenElsewhere = 0;
+
+    for (var k = 0; k < found.length; k++) {
+      if (locationsMatch_(found[k].locations, profile)) matched.push(found[k]);
+      else seenElsewhere++;
+    }
+
+    if (matched.length) {
+      var names = [];
+      for (var m = 0; m < matched.length; m++) {
+        var key = matched[m].type + '|' + item.slug;
+        names.push(matched[m].type.replace('ats_', ''));
+        if (existing[key]) continue;
+        existing[key] = true;
+        additions.push([matched[m].type, item.slug, item.name, 'yes']);
+      }
+      rows[item.row][D_RESULT] = 'added: ' + names.join(', ');
+    } else if (seenElsewhere) {
+      rows[item.row][D_RESULT] = 'board found, but nothing in your locations';
+    } else {
+      rows[item.row][D_RESULT] = 'no board found on greenhouse, lever or ashby';
+    }
+    rows[item.row][D_CHECKED] = new Date();
+  }
+
+  sheet.getRange(2, 1, rows.length, DISCOVER_HEADERS.length).setValues(rows);
+  appendRows_(TABS.SOURCES, additions);
+  return { checked: pending.length, added: additions.length };
+}
+
+/** A company name as a board slug: how these boards are almost always named. */
+function boardSlug_(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Probe one slug against all three boards at once.
+ *
+ * UrlFetchApp.fetchAll issues them concurrently, which is the difference
+ * between twenty-five companies fitting inside the execution cap and not. The
+ * probe URLs are deliberately the light ones — Greenhouse with content=true
+ * returns every description on the board, and discovery only needs to know
+ * that the board exists and where its jobs are.
+ *
+ * Returns { slug: [ { type, locations } ] }.
+ */
+function probeBoards_(pending) {
+  var kinds = ['ats_greenhouse', 'ats_lever', 'ats_ashby'];
+  var requests = [];
+  var index = [];
+
+  for (var i = 0; i < pending.length; i++) {
+    for (var k = 0; k < kinds.length; k++) {
+      requests.push({
+        url: boardProbeUrl_(kinds[k], pending[i].slug),
+        method: 'get',
+        muteHttpExceptions: true
+      });
+      index.push({ slug: pending[i].slug, type: kinds[k] });
+    }
+  }
+
+  var responses = UrlFetchApp.fetchAll(requests);
+  var out = {};
+
+  for (var r = 0; r < responses.length; r++) {
+    var at = index[r];
+    if (responses[r].getResponseCode() !== 200) continue;
+    var locations;
+    try {
+      locations = boardLocations_(at.type, JSON.parse(responses[r].getContentText()));
+    } catch (err) {
+      continue;
+    }
+    if (!locations.length) continue;
+    if (!out[at.slug]) out[at.slug] = [];
+    out[at.slug].push({ type: at.type, locations: locations });
+  }
+  return out;
+}
+
+function boardProbeUrl_(type, slug) {
+  if (type === 'ats_greenhouse') {
+    return 'https://boards-api.greenhouse.io/v1/boards/' +
+           encodeURIComponent(slug) + '/jobs';
+  }
+  if (type === 'ats_lever') {
+    return 'https://api.lever.co/v0/postings/' +
+           encodeURIComponent(slug) + '?mode=json';
+  }
+  return 'https://api.ashbyhq.com/posting-api/job-board/' +
+         encodeURIComponent(slug);
+}
+
+/** Just the locations, from whichever shape this board answers with. */
+function boardLocations_(type, data) {
+  var out = [];
+  var jobs = (Object.prototype.toString.call(data) === '[object Array]')
+    ? data : (data.jobs || []);
+
+  for (var i = 0; i < jobs.length; i++) {
+    var job = jobs[i];
+    var place = (type === 'ats_greenhouse') ? (job.location || {}).name
+              : (type === 'ats_lever') ? (job.categories || {}).location
+              : job.location;
+    if (place) out.push(String(place));
+  }
+  return out;
+}
+
+/**
+ * Does this board hire anywhere the deployer would work?
+ *
+ * Compared through normalizeLocation_, so "Tel Aviv" on the Profile matches a
+ * board writing "Tel Aviv-Yafo, Tel Aviv District, Israel" — the same function
+ * that stops those being two jobs.
+ */
+function locationsMatch_(locations, profile) {
+  var wanted = (profile.locations || []).map(normalizeLocation_)
+    .filter(function (place) { return place.length > 2; });
+  if (!wanted.length) return true;
+
+  for (var i = 0; i < locations.length; i++) {
+    var place = normalizeLocation_(locations[i]);
+    for (var w = 0; w < wanted.length; w++) {
+      if (place.indexOf(wanted[w]) !== -1 || wanted[w].indexOf(place) !== -1) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** What is already on the Sources tab, so discovery never adds a duplicate. */
+function existingSourceKeys_() {
+  var sheet = getSheet_(TABS.SOURCES);
+  var last = sheet.getLastRow();
+  var out = {};
+  if (last < 2) return out;
+
+  var rows = sheet.getRange(2, 1, last - 1, SOURCES_HEADERS.length).getValues();
+  for (var i = 0; i < rows.length; i++) {
+    out[String(rows[i][S_TYPE]).trim() + '|' + String(rows[i][S_REF]).trim()] = true;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- normalizing
 
 /**

@@ -22,6 +22,7 @@ It never submits an application. That is on purpose, and it is explained under
 - [Setup](#setup)
 - [Filling in your Profile](#filling-in-your-profile)
 - [Choosing your sources](#choosing-your-sources)
+- [Growing the list without maintaining it](#growing-the-list-without-maintaining-it)
 - [Which country you are searching](#which-country-you-are-searching)
 - [The first run](#the-first-run)
 - [Reading the report](#reading-the-report)
@@ -117,7 +118,7 @@ You are agreeing to three things:
 | Connect to an external service | To reach the Anthropic API. |
 | Send email as you | The daily digest, sent to you. Nothing else, nobody else. |
 
-When it finishes you will see a box confirming eight tabs and two triggers. Go back to
+When it finishes you will see a box confirming nine tabs and two triggers. Go back to
 the spreadsheet tab and reload the page — a **Job scout** menu appears next to *Help*.
 
 > **Using a PDF from Drive instead of pasted text?** You need one more permission. In the
@@ -208,6 +209,32 @@ companies you listed.
 The practical way to build the list is to think of fifteen or twenty employers
 you would genuinely want to work for, open each careers page, and look at the
 address bar — it usually names the ATS outright.
+
+### Growing the list without maintaining it
+
+You should not have to know what an ATS is, or keep a list of board slugs
+current. The **Discover** tab turns company names into Sources rows for you.
+
+1. Put company names in column A of the **Discover** tab — one per row, spelled
+   however you normally would. `Cato Networks`, `Logz.io`, `Moon Active`.
+2. **Job scout → Discover boards from company names.**
+3. It checks Greenhouse, Lever and Ashby for each, and appends the live ones to
+   your Sources tab. The Result column says what happened to each name.
+
+It only adds a board that has **at least one job in your `locations`**. That is
+not fussiness — guessing a slug from a name collides constantly. "Next
+Insurance" finds a real Greenhouse board at `insurance`, and "Moon Active"
+finds one at `moon`; both exist, neither is the right company. Requiring a job
+somewhere you would actually work threw out every such collision when this was
+built, without anyone having to recognise the names.
+
+Twenty-five names per run, so it fits inside Apps Script's execution limit.
+Run it again for the next twenty-five.
+
+Where do the names come from? A VC portfolio page, a conference sponsor list,
+the companies your friends work at, anywhere you already form opinions about
+employers. That list is worth keeping anyway — it is the part of a job search
+only you can do.
 
 ### Open search — reach
 

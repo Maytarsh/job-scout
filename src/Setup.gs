@@ -17,6 +17,7 @@ function setup() {
   ensureTab_(TABS.PROFILE, PROFILE_HEADERS, sampleProfile_());
   ensureTab_(TABS.SOURCES, SOURCES_HEADERS, sampleSources_());
   ensureTab_(TABS.ANSWERS, ANSWERS_HEADERS, blankAnswers_());
+  ensureTab_(TABS.DISCOVER, DISCOVER_HEADERS, []);
   ensureTab_(TABS.JOBS, JOBS_HEADERS, []);
   ensureTab_(TABS.REPORT, REPORT_HEADERS, []);
   ensureTab_(TABS.FACTS, FACTS_HEADERS, []);
@@ -33,7 +34,7 @@ function setup() {
   var message = [
     (hasKey ? '✓' : '✗') + ' Anthropic API key' +
       (hasKey ? '' : ' — add ANTHROPIC_API_KEY in Project Settings -> Script Properties'),
-    '✓ Eight tabs ready',
+    '✓ Nine tabs ready',
     '✓ Triggers installed: discovery daily, collection hourly',
     '',
     'Next: replace the sample rows in the Profile and Sources tabs with your',
@@ -258,6 +259,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Draft applications (85+)', 'menuDraftApplications')
     .addSeparator()
+    .addItem('Discover boards from company names', 'menuDiscoverBoards')
     .addItem('Check sources', 'menuCheckSources')
     .addItem('Re-read the resume', 'menuReReadResume')
     .addItem('Run setup again', 'setup')
@@ -270,6 +272,31 @@ function menuDraftApplications() {
          result.needInput + ' need answers from you, ' + result.blocked +
          ' blocked.' +
          (result.asked ? ' ' + result.asked + ' new question(s) in Answers.' : ''));
+}
+
+/**
+ * Menu: turn a list of company names into Sources rows.
+ *
+ * The answer to "I do not want to maintain a list of boards": you keep a list
+ * of companies, which is a thing you already have opinions about, and this
+ * works out the plumbing.
+ */
+function menuDiscoverBoards() {
+  var profile = readProfile_();
+  var result = discoverBoards_(profile);
+
+  if (result.empty) {
+    toast_('The Discover tab is empty. Put company names in column A, one per ' +
+           'row, then run this again.');
+    return;
+  }
+  if (result.done) {
+    toast_('Every name on the Discover tab has been checked already. Add more ' +
+           'names, or clear the Result column to re-check.');
+    return;
+  }
+  toast_(result.checked + ' name(s) checked, ' + result.added +
+         ' board(s) added to Sources. See the Result column for the rest.');
 }
 
 /**

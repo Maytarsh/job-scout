@@ -20,6 +20,11 @@ var CONFIG = {
   // built on those facts. Cheapness is worth nothing here.
   PARSE_MODEL: 'claude-opus-5',
 
+  // Company names checked per Discover run. Each one costs three requests —
+  // one per ATS — and they go out in a single fetchAll, so this is bounded by
+  // the six-minute execution cap rather than by politeness.
+  MAX_DISCOVER_PER_RUN: 25,
+
   // Jobs submitted for scoring in one batch. Most ATS boards give no reliable
   // posted date, and an unknown date is never filtered (see Jobs.gs), so the
   // first run of a freshly configured Sheet sees every open role at every
@@ -83,6 +88,7 @@ var TABS = {
   JOBS: 'Jobs',
   REPORT: 'Report',
   FACTS: '_Facts',
+  DISCOVER: 'Discover',
   RUNS: '_Runs',
   ERRORS: '_Errors'
 };
@@ -91,6 +97,10 @@ var PROFILE_HEADERS = ['Key', 'Value', 'What it does'];
 var SOURCES_HEADERS = ['Type', 'Slug or URL', 'Label', 'Enabled'];
 var ANSWERS_HEADERS = ['Question key', 'Question', 'Your answer', 'Updated'];
 var FACTS_HEADERS = ['Fact', 'Value'];
+var DISCOVER_HEADERS = ['Company name', 'Result', 'Checked'];
+
+// Discover column indices (0-based, must match DISCOVER_HEADERS).
+var D_NAME = 0, D_RESULT = 1, D_CHECKED = 2;
 
 var JOBS_HEADERS = [
   'Job key', 'Company', 'Position', 'Location', 'Status', 'Score',

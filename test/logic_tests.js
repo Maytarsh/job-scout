@@ -363,6 +363,117 @@ t('every source type in the config has an adapter behind it', function () {
   }
 });
 
+// ------------------------------------------------------------------ discovery
+
+t('a company name becomes the slug these boards actually use', function () {
+  eq(boardSlug_('Cato Networks'), 'catonetworks', 'two words');
+  eq(boardSlug_('Logz.io'), 'logzio', 'punctuation');
+  eq(boardSlug_('  Moon Active  '), 'moonactive', 'whitespace');
+  eq(boardSlug_('Salt Security'), 'saltsecurity', 'two words again');
+});
+
+t('a board only counts if it hires where the person would work', function () {
+  // This is what makes slug-guessing safe. Probing "Next Insurance" finds a
+  // real Greenhouse board at "insurance" and "Moon Active" finds one at
+  // "moon" - both live, neither the right company. Requiring a job in the
+  // deployer's own locations threw out every such collision without anyone
+  // having to recognise the names.
+  var profile = { locations: ['Tel Aviv', 'Herzliya'] };
+  ok(locationsMatch_(['Tel Aviv-Yafo, Tel Aviv District, Israel'], profile),
+     'the long form of Tel Aviv');
+  ok(locationsMatch_(['Herzliya'], profile), 'exact');
+  ok(locationsMatch_(['New York', 'Tel Aviv'], profile), 'one of several');
+  ok(!locationsMatch_(['New York', 'Austin, TX'], profile),
+     'a board hiring only in the US was accepted');
+  ok(!locationsMatch_([], profile), 'a board with no locations was accepted');
+});
+
+t('a profile with no locations accepts any board rather than none', function () {
+  ok(locationsMatch_(['Anywhere'], { locations: [] }), 'empty profile');
+});
+
+t('discovery adds one row per board and never a duplicate', function () {
+  var discoverRows = [
+    ['Cato Networks', '', ''],
+    ['Moon Active', '', ''],
+    ['Nowhere Ltd', '', '']
+  ];
+  var sourceRows = [['ats_greenhouse', 'catonetworks', 'Cato Networks', 'yes']];
+  var appended = [];
+  var written = null;
+
+  var sheets = {};
+  sheets[TABS.DISCOVER] = fakeSheet(DISCOVER_HEADERS, discoverRows,
+                                    function (v) { written = v; });
+  sheets[TABS.SOURCES] = fakeSheet(SOURCES_HEADERS, sourceRows, null);
+
+  var result = withGlobals({
+    getSheet_: function (name) { return sheets[name]; },
+    appendRows_: function (tab, rows) { appended = rows; },
+    probeBoards_: function () {
+      return {
+        // Already on the Sources tab - must not be added twice.
+        catonetworks: [{ type: 'ats_greenhouse', locations: ['Tel Aviv'] }],
+        // New, and hiring where we are.
+        moonactive: [{ type: 'ats_ashby', locations: ['Tel Aviv'] }]
+        // "Nowhere Ltd" resolves to nothing at all.
+      };
+    }
+  }, function () {
+    return discoverBoards_({ locations: ['Tel Aviv'] });
+  });
+
+  eq(result.checked, 3, 'names checked');
+  eq(result.added, 1, 'rows added');
+  eq(appended, [['ats_ashby', 'moonactive', 'Moon Active', 'yes']], 'the new row');
+  eq(written[0][D_RESULT], 'added: greenhouse', 'already-present board still reported');
+  eq(written[1][D_RESULT], 'added: ashby', 'new board');
+  ok(String(written[2][D_RESULT]).indexOf('no board found') === 0, 'the miss');
+});
+
+t('a board that exists but hires elsewhere says so, and is not added', function () {
+  var discoverRows = [['Some US Co', '', '']];
+  var appended = [];
+  var written = null;
+  var sheets = {};
+  sheets[TABS.DISCOVER] = fakeSheet(DISCOVER_HEADERS, discoverRows,
+                                    function (v) { written = v; });
+  sheets[TABS.SOURCES] = fakeSheet(SOURCES_HEADERS, [], null);
+
+  withGlobals({
+    getSheet_: function (name) { return sheets[name]; },
+    appendRows_: function (tab, rows) { appended = rows; },
+    probeBoards_: function () {
+      return { someusco: [{ type: 'ats_greenhouse', locations: ['Austin, TX'] }] };
+    }
+  }, function () {
+    return discoverBoards_({ locations: ['Tel Aviv'] });
+  });
+
+  eq(appended, [], 'it was added anyway');
+  ok(String(written[0][D_RESULT]).indexOf('nothing in your locations') !== -1,
+     'result said: ' + written[0][D_RESULT]);
+});
+
+t('discovery stops at the per-run cap and leaves the rest unchecked', function () {
+  var discoverRows = [];
+  for (var i = 0; i < CONFIG.MAX_DISCOVER_PER_RUN + 10; i++) {
+    discoverRows.push(['Company ' + i, '', '']);
+  }
+  var sheets = {};
+  sheets[TABS.DISCOVER] = fakeSheet(DISCOVER_HEADERS, discoverRows, function () {});
+  sheets[TABS.SOURCES] = fakeSheet(SOURCES_HEADERS, [], null);
+
+  var result = withGlobals({
+    getSheet_: function (name) { return sheets[name]; },
+    appendRows_: function () {},
+    probeBoards_: function () { return {}; }
+  }, function () {
+    return discoverBoards_({ locations: [] });
+  });
+  eq(result.checked, CONFIG.MAX_DISCOVER_PER_RUN, 'checked this run');
+});
+
 // ------------------------------------------------------------------ freshness
 
 t('an age is hours behind now, never negative', function () {
@@ -499,6 +610,21 @@ function withProps(store, fn) {
       }
     }
   }, fn);
+}
+
+/** A Sheet stand-in that records the values written back to it. */
+function fakeSheet(headers, rows, onWrite) {
+  return {
+    getLastRow: function () { return rows.length + 1; },
+    getRange: function () {
+      return {
+        getValues: function () { return rows; },
+        setValues: function (v) { if (onWrite) onWrite(v); },
+        clearContent: function () {},
+        setDataValidation: function () {}
+      };
+    }
+  };
 }
 
 /** A book with the given Jobs rows, and nowhere for a write to escape to. */

@@ -205,6 +205,25 @@ position with no name, quoting what it actually received, rather than returning
 rows with blank titles and a dedupe key of `||`. Get a real `uid/token`, run it,
 and either confirm the fields or fix them — then delete this paragraph.
 
+## The Sources list is maintained by the tool, not by hand
+
+A list somebody curates by hand was a fair criticism of the original design, and
+`discoverBoards_` is the answer to it: names in, board rows out. The list still
+exists — it is the maintenance that does not.
+
+- **A board only counts if it hires in the deployer's `locations`.** Slug guessing
+  collides constantly — "Next Insurance" resolves to a live Greenhouse board at
+  `insurance`, "Moon Active" to one at `moon`, both real, neither right. The
+  location check removed every collision in the run that built the shipped list,
+  with nobody having to recognise the names. Do not relax it into "the board
+  exists"; that is the same bug as the seventeen dead slugs, arriving by a
+  different route.
+- Probe URLs are the light ones on purpose. Greenhouse with `content=true`
+  returns every description on the board, and discovery only needs to know the
+  board is real and where it hires.
+- `UrlFetchApp.fetchAll` is what makes twenty-five companies fit in one
+  execution — seventy-five sequential fetches would not.
+
 ## Deploying
 
 Deployment is **manual copy-paste** into the Apps Script editor, one editor file per
