@@ -427,6 +427,33 @@ is the problem; if there are barely any jobs at all, the sources are.
 weights. If good jobs are being marked down for location when you would happily commute,
 lower `weight_location` and put the difference somewhere else. They must still total 100.
 
+**Does your market publish salaries?** If it does not, set `weight_compensation` to
+`0` and spread those points across the other four. This is the one tuning decision
+that is easy to get wrong, because nothing looks broken when you do.
+
+When a posting states no pay, the scorer returns 50 for compensation — the same 50 on
+every job. That does not rank anything; it is a constant. But it still consumes its
+share of the scale, so the dimensions that *do* carry signal can never add up to 100,
+and every score comes out lower than it should:
+
+| How good the job really is | With `weight_compensation: 15` | With `0` |
+|---|---|---|
+| Perfect on the other four | 93 | 100 |
+| 90 on the other four | **84** | 90 |
+| 80 on the other four | 76 | 80 |
+
+An excellent job scoring 84 sits below a default `apply_threshold` of 85, so it never
+gets a cover letter. A zero weight is valid and makes scores mean what they say.
+
+How to tell which kind of market you are in: open a dozen postings from your Sources
+tab and count how many state a number. Measured across thirty real boards while this was
+written, **32% of postings outside Israel named a figure, against 5% of Israeli-located
+ones** — pay-transparency law in New York, California, Colorado and the EU, and no
+equivalent in Israel. Same code, different Profile row.
+
+`salary_expectation` on the Answers tab is unaffected either way. That one is used when
+drafting an application, not when scoring, and you still need it.
+
 **Something the fields cannot express?** Put it in `notes`.
 
 A few knobs live in `Config.gs` and need that file re-pasted: `MAX_NEW_JOBS_PER_RUN` (how
